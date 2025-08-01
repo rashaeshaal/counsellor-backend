@@ -23,6 +23,9 @@ from userdetails.models import UserProfile
 from userdetails.serializers import UserProfileSerializer
 from userdetails.serializers import FirebaseAuthSerializer, UserProfileSerializer, UserSerializer
 from dashboard.serializers import BookingSerializer
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
+
 
 
 logger = logging.getLogger(__name__)
@@ -146,6 +149,8 @@ class AcceptCallView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+       
+       
         booking_id = request.data.get('booking_id')
         
         if not booking_id:
@@ -218,6 +223,10 @@ class AcceptCallView(APIView):
                 {'error': 'Failed to accept call'}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+            
+            
+            
+            
 class ActiveBookingView(APIView):
     permission_classes = [IsAuthenticated]
 

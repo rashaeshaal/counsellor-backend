@@ -28,7 +28,7 @@ SECRET_KEY = 'django-insecure-bhnzdvyujn1&qfi=u(@%t!6e_2-#12y&_y*ay)m1lu$0azak5*
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['*']
 
 
 # Application definition
@@ -148,7 +148,8 @@ AUTH_USER_MODEL = 'userdetails.User'
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:8100", 
+    "http://localhost:8000",
+    'http://192.168.1.33:4201', 
 ] 
 
 STATIC_URL = 'static/'
@@ -169,7 +170,7 @@ RAZORPAY_KEY_SECRET = config('RAZORPAY_KEY_SECRET')
 # settings.py
 CSRF_COOKIE_SECURE = True  # Use True in production with HTTPS
 CSRF_COOKIE_HTTPONLY = True
-CSRF_TRUSTED_ORIGINS = ['http://localhost:8100']
+CSRF_TRUSTED_ORIGINS = ['http://localhost:8000']
 
 
 SIMPLE_JWT = {

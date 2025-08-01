@@ -8,9 +8,9 @@ urlpatterns = [
 
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token-refresh'),
     # User URLs
-    path('api/auth/counsellor/register/', views.UserProfileRegisterView.as_view(), name='counsellor-register'),
-    path('api/auth/counsellorlogin/', views.UserLoginView.as_view(), name='counsellor-login'),
-    path('api/auth/firebase-login/', views.FirebaseAuthView.as_view(), name='firebase-auth'),
+    path('counsellor/register/', views.UserProfileRegisterView.as_view(), name='counsellor-register'),
+    path('counsellorlogin/', views.UserLoginView.as_view(), name='counsellor-login'),
+    path('firebase-login/', views.FirebaseAuthView.as_view(), name='firebase-auth'),
    
   
 ]
