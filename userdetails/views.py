@@ -17,7 +17,7 @@ import razorpay
 from .models import User, UserProfile, OTPAttempt
 from .serializers import (
     UserSerializer, UserProfileSerializer, FirebaseAuthSerializer,
-    PhoneNumberSerializer, OTPVerificationSerializer
+    PhoneNumberSerializer, OTPVerificationSerializer,UserProfileUpdateSerializer 
 )
 
 
@@ -115,6 +115,49 @@ class FirebaseAuthView(APIView):
                 {'error': 'Authentication failed'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class UserRegistrationView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = UserProfileUpdateSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            # Get the authenticated user
+            user = request.user
+            
+            # Get or create the user profile
+            profile, created = UserProfile.objects.get_or_create(
+                user=user,
+                defaults={
+                    'phone_number': user.phone_number,
+                    'user_role': 'normal',
+                    'is_active': True,
+                }
+            )
+
+            # Update profile with provided details
+            profile.name = serializer.validated_data.get('name')
+            profile.age = serializer.validated_data.get('age')
+            profile.gender = serializer.validated_data.get('gender')
+            profile.save()
+
+            return Response({
+                'message': 'User profile updated successfully',
+                'profile': UserProfileUpdateSerializer(profile).data
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"User registration error: {str(e)}")
+            return Response(
+                {'error': 'Failed to update user profile'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
 
 class UserProfileRegisterView(APIView):
     permission_classes = [AllowAny]

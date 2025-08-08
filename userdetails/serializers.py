@@ -52,9 +52,9 @@ class UserProfileSerializer(serializers.ModelSerializer):
         fields = [
             'id','user_role', 'phone_number', 'name', 'email', 'age', 'gender',
             'qualification', 'experience', 'google_pay_number', 'account_number',
-            'ifsc_code', 'is_approved', 'is_active', 'profile_photo', 'firebase_uid'
+            'ifsc_code', 'is_approved', 'is_active', 'profile_photo', 'firebase_uid','user_id'
         ]
-        read_only_fields = ['user', 'is_approved', 'firebase_uid']
+        read_only_fields = ['user',  'firebase_uid']
 
 
 class PhoneNumberSerializer(serializers.Serializer):
@@ -80,3 +80,13 @@ class OTPVerificationSerializer(serializers.Serializer):
         phone_regex(value)
         return value
     
+class UserProfileUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserProfile
+        fields = ['name', 'age', 'gender']
+        
+        extra_kwargs = {
+            'name': {'required': True},
+            'age': {'required': True},
+            'gender': {'required': True}
+        }

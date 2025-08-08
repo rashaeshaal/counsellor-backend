@@ -11,6 +11,7 @@ urlpatterns = [
     path('counsellor/register/', views.UserProfileRegisterView.as_view(), name='counsellor-register'),
     path('counsellorlogin/', views.UserLoginView.as_view(), name='counsellor-login'),
     path('firebase-login/', views.FirebaseAuthView.as_view(), name='firebase-auth'),
+    path('register-user/', views.UserRegistrationView.as_view(), name='user-registration'),
    
   
 ]

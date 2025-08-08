@@ -9,5 +9,7 @@ urlpatterns = [
     path('payment/verify-payment/', views.VerifyPaymentView.as_view(), name='verify-payment'),
     path('call/initiate/', views.InitiateCallView.as_view(), name='initiate-call'),
     path('wallet/', views.WalletView.as_view(), name='wallet'),
+    path('problems/', views.ProblemListView.as_view(), name='problem-list'),
+    path('user-problems/', views.UserProblemView.as_view(), name='user-problem'),
     
 ]

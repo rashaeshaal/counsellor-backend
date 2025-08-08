@@ -26,6 +26,8 @@ from django.db import transaction
 from .serializers import BookingSerializer, CallRequestSerializer,WalletSerializer, WalletTransactionSerializer
 from userdetails.models import Wallet, WalletTransaction
 from decimal import Decimal
+from adminapp.models import UserProblem, Problem
+from adminapp.serializers import UserProblemSerializer, ProblemSerializer
 # Create your views here.
 class CounsellorListView(APIView):
     permission_classes = [AllowAny]
@@ -433,3 +435,49 @@ class WalletView(APIView):
                 {'error': 'Failed to fetch wallet details'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )                   
+            
+            
+class ProblemListView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """List all problems."""
+        problems = Problem.objects.all()
+        serializer = ProblemSerializer(problems, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+class UserProblemView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        """List problems selected by the authenticated user."""
+        user_problems = UserProblem.objects.filter(user_profile=request.user.userprofile)
+        serializer = UserProblemSerializer(user_problems, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request):
+        """Select a problem for the authenticated user."""
+        problem_id = request.data.get('problem_id')
+
+        try:
+            problem = Problem.objects.get(pk=problem_id)
+            user_profile = UserProfile.objects.get(user=request.user)
+
+            if UserProblem.objects.filter(user_profile=user_profile, problem=problem).exists():
+                return Response({"error": "Problem already selected"}, status=status.HTTP_400_BAD_REQUEST)
+
+            data = {
+                'problem_id': problem.id,
+                'user_profile': user_profile.id
+            }
+
+            serializer = UserProblemSerializer(data=data)
+            if serializer.is_valid():
+                serializer.save()
+                return Response(serializer.data, status=status.HTTP_201_CREATED)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        except Problem.DoesNotExist:
+            return Response({"error": "Problem not found"}, status=status.HTTP_404_NOT_FOUND)
+        except UserProfile.DoesNotExist:
+            return Response({"error": "User profile not found"}, status=status.HTTP_404_NOT_FOUND)            

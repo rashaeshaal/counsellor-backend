@@ -14,6 +14,9 @@ from pathlib import Path
 import os
 from decouple import config
 from datetime import timedelta
+import os
+from pathlib import Path
+
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -48,6 +51,7 @@ INSTALLED_APPS = [
     'dashboard',
     'counsellorapp',
     'channels',
+    'adminapp',
 ]
 
 MIDDLEWARE = [
@@ -147,8 +151,10 @@ AUTH_USER_MODEL = 'userdetails.User'
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
 CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:8000",
+    "http://localhost:4200",
     'http://192.168.1.33:4201', 
 ] 
 
@@ -166,11 +172,15 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 FIREBASE_SERVICE_ACCOUNT_KEY = os.path.join(BASE_DIR, 'firebase-service-account-key.json')
 RAZORPAY_KEY_ID = config('RAZORPAY_KEY_ID')
 RAZORPAY_KEY_SECRET = config('RAZORPAY_KEY_SECRET')
+RAZORPAY_ACCOUNT_NUMBER = config('RAZORPAY_ACCOUNT_NUMBER')
 
 # settings.py
-CSRF_COOKIE_SECURE = True  # Use True in production with HTTPS
+CSRF_COOKIE_SECURE = False  # Use True in production with HTTPS
 CSRF_COOKIE_HTTPONLY = True
-CSRF_TRUSTED_ORIGINS = ['http://localhost:8000']
+CSRF_COOKIE_SAMESITE = 'Lax'
+SESSION_COOKIE_SECURE = False
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_TRUSTED_ORIGINS = ['http://localhost:8000','http://localhost:4200']
 
 
 SIMPLE_JWT = {
@@ -206,4 +216,6 @@ LOGGING = {
         },
     },
 }
-  
+
+MEDIA_URL = '/media/'
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')

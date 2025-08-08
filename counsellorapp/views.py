@@ -355,4 +355,6 @@ class BookingDetailView(APIView):
             return Response(serializer.data)
         except Booking.DoesNotExist:
             logger.error(f"Booking {id} not found for user {request.user.id}")
-            return Response({'error': 'Booking not found'}, status=status.HTTP_404_NOT_FOUND)            
+            return Response({'error': 'Booking not found'}, status=status.HTTP_404_NOT_FOUND) 
+        
+      

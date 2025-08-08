@@ -13,16 +13,19 @@ class CustomUserManager(BaseUserManager):
         # Normalize phone number (e.g., remove spaces, dashes)
         return phone_number.replace(" ", "").replace("-", "")
 
-    def create_user(self, phone_number, **extra_fields):
+    def create_user(self, phone_number, password=None, **extra_fields):
         if not phone_number:
             raise ValueError("The Phone Number field must be set")
         phone_number = self.normalize_phone_number(phone_number)
         user = self.model(phone_number=phone_number, **extra_fields)
-        user.set_unusable_password()
+        if password:
+            user.set_password(password)
+        else:
+            user.set_unusable_password()
         user.save(using=self._db)
         return user
 
-    def create_superuser(self, phone_number, **extra_fields):
+    def create_superuser(self, phone_number, password=None, **extra_fields):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
         extra_fields.setdefault("is_admin", True)
@@ -30,7 +33,7 @@ class CustomUserManager(BaseUserManager):
             raise ValueError("Superuser must have is_staff=True.")
         if extra_fields.get("is_superuser") is not True:
             raise ValueError("Superuser must have is_superuser=True.")
-        return self.create_user(phone_number, **extra_fields)
+        return self.create_user(phone_number, password, **extra_fields)
 
 class User(AbstractUser):
     username = None
@@ -46,14 +49,14 @@ class User(AbstractUser):
         unique=True,
         help_text="Phone number with country code"
     )
-    
+    email = models.EmailField(unique=True, blank=True, null=True)
     is_admin = models.BooleanField(default=False)
     firebase_uid = models.CharField(max_length=255, blank=True, null=True, unique=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     USERNAME_FIELD = 'phone_number'
-    REQUIRED_FIELDS = []
+    REQUIRED_FIELDS = ['email']
 
     objects = CustomUserManager()
 
@@ -64,6 +67,7 @@ class UserProfile(models.Model):
     USER_TYPE_CHOICES = [
         ('normal', 'Normal User'),
         ('counsellor', 'Counsellor'),
+        ('admin', 'Admin'),
     ]
     
     GENDER_CHOICES = [
@@ -105,7 +109,9 @@ class UserProfile(models.Model):
     is_active = models.BooleanField(default=True)
     profile_photo = models.ImageField(upload_to='profile_photos/', null=True, blank=True)
     firebase_uid = models.CharField(max_length=255, blank=True, null=True, unique=True)
-    
+    razorpay_contact_id = models.CharField(max_length=100, blank=True, null=True)
+    razorpay_fund_account_id = models.CharField(max_length=100, blank=True, null=True)
+   
     def clean(self):
         # Ensure phone_number matches user.phone_number
         if self.phone_number != self.user.phone_number:
