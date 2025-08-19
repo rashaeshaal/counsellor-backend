@@ -1,5 +1,6 @@
 from django.shortcuts import render
 from rest_framework.views import APIView
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -12,6 +13,7 @@ from firebase_admin import credentials, auth
 import logging
 from django.views.decorators.csrf import csrf_exempt
 import razorpay
+import datetime
 import hmac
 import hashlib
 from .models import Booking, CallRequest
@@ -38,6 +40,32 @@ class CounsellorListView(APIView):
         serializer = UserProfileSerializer(counsellors, many=True)
         logger.debug(f"Returning {len(serializer.data)} counsellors")
         return Response(serializer.data, status=status.HTTP_200_OK)
+    def put(self, request, pk):
+        logger.debug(f"CounsellorListView PUT request for counsellor ID: {pk}")
+        
+        # Override permission for PUT to require authentication
+        self.permission_classes = [IsAuthenticated]
+        self.check_permissions(request)
+
+        try:
+            counsellor = UserProfile.objects.get(pk=pk, user_role='counsellor')
+        except UserProfile.DoesNotExist:
+            logger.error(f"Counsellor with ID {pk} not found")
+            return Response({"detail": "Counsellor not found"}, status=status.HTTP_404_NOT_FOUND)
+
+        # Check if the requesting user is the counsellor or an admin
+        if request.user != counsellor.user and not request.user.is_staff:
+            logger.warning(f"Unauthorized update attempt by user {request.user.id} on counsellor {pk}")
+            return Response({"detail": "You do not have permission to edit this profile"}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = UserProfileSerializer(counsellor, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            logger.debug(f"Counsellor ID {pk} updated successfully")
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        else:
+            logger.error(f"Validation errors for counsellor ID {pk}: {serializer.errors}")
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 
@@ -50,30 +78,47 @@ class CreateOrderView(APIView):
             if not counsellor_id:
                 return Response({'error': 'Counsellor ID is required'}, status=status.HTTP_400_BAD_REQUEST)
             
-            counsellor = UserProfile.objects.get(id=counsellor_id)
-            if not counsellor.is_approved or not counsellor.is_active:
-                return Response({'error': 'Counsellor is not approved or active'}, status=status.HTTP_400_BAD_REQUEST)
+            # Validate counsellor
+            try:
+                            counsellor = UserProfile.objects.get(user__id=counsellor_id, user_role='counsellor', is_active=True)
+            except UserProfile.DoesNotExist:
+                return Response({'error': 'Counsellor not found'}, status=status.HTTP_404_NOT_FOUND)
             
+            # Validate counsellor's payment settings
             try:
                 session_fee = counsellor.payment_settings.session_fee
+                session_duration = counsellor.payment_settings.session_duration
             except UserProfile.payment_settings.RelatedObjectDoesNotExist:
                 return Response({'error': 'Counsellor payment settings not configured'}, status=status.HTTP_400_BAD_REQUEST)
             
+            # Dynamically select a superuser
+            try:
+                superuser = UserProfile.objects.filter(
+                    user_role='admin',
+                    is_approved=True,
+                    is_active=True
+                ).first()
+                if not superuser:
+                    return Response({'error': 'No active superuser available for payment'}, status=status.HTTP_404_NOT_FOUND)
+            except UserProfile.DoesNotExist:
+                return Response({'error': 'No active superuser available for payment'}, status=status.HTTP_404_NOT_FOUND)
+            
             client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
             order_data = {
-                'amount': int(session_fee * 100),
+                'amount': int(session_fee * 100),  # Use counsellor's session_fee
                 'currency': 'INR',
-                'receipt': f'booking_{counsellor_id}_{request.user.id}',
+                'receipt': f'booking_{counsellor_id}_{request.user.id}_superuser_{superuser.id}',
                 'payment_capture': 1
             }
             order = client.order.create(data=order_data)
             
             booking = Booking.objects.create(
                 user=request.user,
-                counsellor=counsellor,
+                counsellor=counsellor,  # Booking is for the counsellor
                 order_id=order['id'],
                 amount=order['amount'] / 100,
-                status='pending'
+                status='pending',
+                session_duration=session_duration
             )
             
             return Response({
@@ -81,27 +126,23 @@ class CreateOrderView(APIView):
                 'amount': order['amount'],
                 'currency': order['currency'],
                 'key': settings.RAZORPAY_KEY_ID,
-                'name': 'Counsellor Booking',
-                'description': f'Booking with {counsellor.name} for {counsellor.payment_settings.session_duration} minutes',
+                'name': 'Counsellor Payment',
+                'description': f'Payment for booking with {counsellor.name} to superuser {superuser.name}',
                 'image': 'https://yourapp.com/logo.png',
                 'booking_id': booking.id,
-                'counsellor': UserProfileSerializer(counsellor).data
+                'counsellor': UserProfileSerializer(counsellor).data,
+                'superuser_id': superuser.id  # Include superuser ID for reference
             }, status=status.HTTP_201_CREATED)
         
-        except UserProfile.DoesNotExist:
-            return Response({'error': 'Counsellor not found'}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             logger.error(f"Create order error: {str(e)}")
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-
-# dashboard/views.py
 class VerifyPaymentView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
         try:
-            
             razorpay_payment_id = request.POST.get('razorpay_payment_id')
             razorpay_order_id = request.POST.get('razorpay_order_id')
             razorpay_signature = request.POST.get('razorpay_signature')
@@ -113,7 +154,6 @@ class VerifyPaymentView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Verify Razorpay signature
             client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_KEY_SECRET))
             params_dict = {
                 'razorpay_payment_id': razorpay_payment_id,
@@ -132,20 +172,17 @@ class VerifyPaymentView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            # Update booking status and credit wallet
             try:
                 with transaction.atomic():
                     booking = Booking.objects.get(order_id=razorpay_order_id)
                     booking.razorpay_payment_id = razorpay_payment_id
-                    booking.status = 'wallet_credited'  # New status to indicate funds in wallet
+                    booking.status = 'wallet_credited'
                     booking.save()
 
-                    # Credit user's wallet
                     wallet, created = Wallet.objects.get_or_create(user=booking.user)
                     wallet.balance = Decimal(wallet.balance) + booking.amount
                     wallet.save()
 
-                    # Log wallet transaction
                     WalletTransaction.objects.create(
                         wallet=wallet,
                         amount=booking.amount,
@@ -176,6 +213,8 @@ class VerifyPaymentView(APIView):
                 {'error': 'Payment verification failed'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
 
 
 
@@ -330,9 +369,21 @@ class EndCallView(APIView):
     @transaction.atomic
     def post(self, request):
         booking_id = request.data.get('booking_id')
+        actual_duration = request.data.get('actual_duration') # Duration in minutes
+
         if not booking_id:
             logger.error("No booking_id provided in end call request")
             return Response({'error': 'Booking ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        if actual_duration is None:
+            logger.error("No actual_duration provided in end call request")
+            return Response({'error': 'Actual duration is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            actual_duration = Decimal(str(actual_duration)) # Ensure Decimal type
+        except Exception:
+            logger.error(f"Invalid actual_duration format: {actual_duration}")
+            return Response({'error': 'Invalid actual_duration format'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             booking = Booking.objects.get(id=booking_id)
@@ -340,35 +391,59 @@ class EndCallView(APIView):
                 logger.error(f"Booking {booking_id} is not in wallet_credited state")
                 return Response({'error': 'Invalid booking state'}, status=status.HTTP_400_BAD_REQUEST)
 
-            # Get user and counsellor wallets
             user_wallet = Wallet.objects.get(user=booking.user)
             counsellor_wallet, created = Wallet.objects.get_or_create(user=booking.counsellor.user)
 
-            if user_wallet.balance < booking.amount:
-                logger.error(f"Insufficient balance in user wallet for booking {booking_id}")
-                return Response({'error': 'Insufficient wallet balance'}, status=status.HTTP_400_BAD_REQUEST)
+            # Calculate extra minutes for unused time
+            session_duration = Decimal(str(booking.session_duration)) # Ensure Decimal type
+            
+            time_remaining = max(Decimal('0.00'), session_duration - actual_duration)
+            extra_minutes_to_credit = int(time_remaining) # Convert to integer minutes
+
+            # Transfer full booking amount to counsellor (as per new requirement)
+            amount_to_transfer_to_counsellor = booking.amount
+
+            # Ensure user has enough balance for the full booking amount
+            # This check might be redundant if payment is already handled at booking creation
+            # but kept for safety.
+            if user_wallet.balance < amount_to_transfer_to_counsellor:
+                logger.error(f"Insufficient balance in user wallet for booking {booking.id} to cover full amount")
+                return Response({'error': 'Insufficient wallet balance to cover full session cost'}, status=status.HTTP_400_BAD_REQUEST)
 
             # Transfer funds
-            user_wallet.balance -= booking.amount
-            counsellor_wallet.balance += booking.amount
+            user_wallet.balance -= amount_to_transfer_to_counsellor
+            counsellor_wallet.balance += amount_to_transfer_to_counsellor
             user_wallet.save()
             counsellor_wallet.save()
 
-            # Log transactions
+            # Log transactions for fund transfer
             WalletTransaction.objects.create(
                 wallet=user_wallet,
-                amount=booking.amount,
+                amount=amount_to_transfer_to_counsellor,
                 transaction_type='TRANSFER',
-                description=f"Transfer to counsellor for booking {booking.id}",
+                description=f"Transfer to counsellor for booking {booking.id} (full session cost)",
                 related_booking=booking
             )
             WalletTransaction.objects.create(
                 wallet=counsellor_wallet,
-                amount=booking.amount,
+                amount=amount_to_transfer_to_counsellor,
                 transaction_type='DEPOSIT',
-                description=f"Received from user for booking {booking.id}",
+                description=f"Received from user for booking {booking.id} (full session cost)",
                 related_booking=booking
             )
+
+            # Credit extra minutes if applicable
+            if extra_minutes_to_credit > 0:
+                user_wallet.extra_minutes += extra_minutes_to_credit # Add extra minutes to user's wallet
+                user_wallet.save()
+                WalletTransaction.objects.create(
+                    wallet=user_wallet,
+                    amount=Decimal(str(extra_minutes_to_credit)), # Store minutes as amount for transaction log
+                    transaction_type='EXTRA_MINUTES_CREDIT',
+                    description=f"Credited {extra_minutes_to_credit} extra minutes for unused session time for booking {booking.id}",
+                    related_booking=booking
+                )
+                logger.info(f"Credited {extra_minutes_to_credit} extra minutes to user {booking.user.id} for booking {booking.id}")
 
             # Update booking status
             booking.status = 'completed'
@@ -378,26 +453,29 @@ class EndCallView(APIView):
             call_request = CallRequest.objects.filter(booking=booking).first()
             if call_request:
                 call_request.status = 'COMPLETED'
-                call_request.updated_at = timezone.now()
+                call_request.ended_at = timezone.now()
                 call_request.save()
 
-            logger.info(f"Call ended and funds transferred for booking {booking_id}")
+            logger.info(f"Call ended, funds transferred, and extra minutes processed for booking {booking_id}")
             return Response({
-                'status': 'Call ended and funds transferred',
+                'status': 'Call ended, funds transferred, and extra minutes processed',
                 'booking_id': booking.id,
                 'user_wallet_balance': user_wallet.balance,
-                'counsellor_wallet_balance': counsellor_wallet.balance
+                'counsellor_wallet_balance': counsellor_wallet.balance,
+                'extra_minutes_credited': extra_minutes_to_credit
             }, status=status.HTTP_200_OK)
 
         except Booking.DoesNotExist:
             logger.error(f"Booking {booking_id} not found")
             return Response({'error': 'Booking not found'}, status=status.HTTP_404_NOT_FOUND)
         except Wallet.DoesNotExist:
-            logger.error(f"Wallet not found for booking {booking_id}")
+            logger.error(f"Wallet not found for booking {booking.id}")
             return Response({'error': 'Wallet not found'}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            logger.error(f"Error ending call for booking {booking_id}: {str(e)}")
-            return Response({'error': 'Failed to end call and transfer funds'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)  
+            logger.error(f"Error ending call for booking {booking.id}: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return Response({'error': 'Failed to end call and process extra minutes'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)  
         
         
         
@@ -450,8 +528,10 @@ class UserProblemView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        import pdb; pdb.set_trace()
+ 
         """List problems selected by the authenticated user."""
-        user_problems = UserProblem.objects.filter(user_profile=request.user.userprofile)
+        user_problems = UserProblem.objects.filter(user_profile=request.user.user_profile)
         serializer = UserProblemSerializer(user_problems, many=True)
         return Response(serializer.data, status=status.HTTP_200_OK)
 
@@ -460,6 +540,7 @@ class UserProblemView(APIView):
         problem_id = request.data.get('problem_id')
 
         try:
+           
             problem = Problem.objects.get(pk=problem_id)
             user_profile = UserProfile.objects.get(user=request.user)
 
@@ -480,4 +561,88 @@ class UserProblemView(APIView):
         except Problem.DoesNotExist:
             return Response({"error": "Problem not found"}, status=status.HTTP_404_NOT_FOUND)
         except UserProfile.DoesNotExist:
-            return Response({"error": "User profile not found"}, status=status.HTTP_404_NOT_FOUND)            
+            return Response({"error": "User profile not found"}, status=status.HTTP_404_NOT_FOUND)  
+        
+        
+class UserProfileEditView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser, FormParser]
+
+    def get(self, request):
+        try:
+            # Get the user's profile
+            profile = UserProfile.objects.get(user=request.user)
+            if profile.user_role != 'normal':
+                logger.warning(f"User {request.user.id} attempted to access edit profile but is not a normal user")
+                return Response(
+                    {'error': 'Only normal users can edit their profile'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            serializer = UserProfileSerializer(profile)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except UserProfile.DoesNotExist:
+            logger.error(f"UserProfile not found for user {request.user.id}")
+            return Response(
+                {'error': 'User profile not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+    def patch(self, request):
+        try:
+            # Get the user's profile
+            profile = UserProfile.objects.get(user=request.user)
+            if profile.user_role != 'normal':
+                logger.warning(f"User {request.user.id} attempted to update profile but is not a normal user")
+                return Response(
+                    {'error': 'Only normal users can edit their profile'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Update profile with provided data
+            serializer = UserProfileSerializer(profile, data=request.data, partial=True)
+            if serializer.is_valid():
+                # If phone_number is provided, update User.phone_number as well
+                phone_number = request.data.get('phone_number')
+                if phone_number:
+                    request.user.phone_number = phone_number
+                    request.user.save()
+
+                # If email is provided, update User.email
+                email = request.data.get('email')
+                if email:
+                    request.user.email = email
+                    request.user.save()
+
+                serializer.save()
+                logger.info(f"User {request.user.id} updated their profile successfully")
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            else:
+                logger.error(f"Validation errors for user {request.user.id}: {serializer.errors}")
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        except UserProfile.DoesNotExist:
+            logger.error(f"UserProfile not found for user {request.user.id}")
+            return Response(
+                {'error': 'User profile not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error updating profile for user {request.user.id}: {str(e)}")
+            return Response(
+                {'error': 'An error occurred while updating the profile'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+ 
+ 
+class CounsellorDetailView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        user_id = self.kwargs['user_id']
+        try:
+            counsellor = UserProfile.objects.get(user_id=user_id, user_role='counsellor', is_active=True)
+            serializer = UserProfileSerializer(counsellor)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except UserProfile.DoesNotExist:
+            return Response({"error": "Counsellor not found"}, status=status.HTTP_404_NOT_FOUND)
+        
+        

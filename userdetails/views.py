@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
-from django.contrib.auth import get_user_model
+from django.contrib.auth import get_user_model, authenticate
 from django.utils import timezone
 from django.conf import settings
 import firebase_admin
@@ -121,6 +121,7 @@ class UserRegistrationView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
+    
         serializer = UserProfileUpdateSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
@@ -163,11 +164,14 @@ class UserProfileRegisterView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
+        
+        
         logger.debug(f"Request data: {request.data}")
         phone_number = request.data.get('phone_number')
+        password = request.data.get('password')
         required_fields = [
             'phone_number', 'name', 'email', 'age', 'gender', 'qualification',
-            'experience', 'google_pay_number', 'account_number', 'ifsc_code'
+            'experience', 'google_pay_number', 'account_number', 'ifsc_code', 'password'
         ]
 
         # Check for all required fields
@@ -197,18 +201,18 @@ class UserProfileRegisterView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
         except User.DoesNotExist:
-            user = User.objects.create_user(phone_number=phone_number)
+            user = User.objects.create_user(phone_number=phone_number, password=password)
             logger.info(f"Created new User with phone_number {phone_number}")
 
         # Create UserProfile for counsellor
-        serializer_data = request.data.copy()
-        serializer_data['user_role'] = 'counsellor'
-        serializer_data['is_approved'] = False
-        serializer_data['is_active'] = request.data.get('is_active', True)
         
-        serializer = UserProfileSerializer(data=serializer_data, context={'user': user})
+        serializer = UserProfileSerializer(data=request.data, context={'user': user})
         if serializer.is_valid():
-            profile = serializer.save()
+            profile = serializer.save(
+                user_role='counsellor',
+                is_approved=False,
+                is_active=request.data.get('is_active', True)
+            )
             refresh = RefreshToken.for_user(user)
             logger.info(f"Counsellor profile created for {phone_number}")
             return Response({
@@ -226,45 +230,41 @@ class UserLoginView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        phone_number = request.data.get('phone_number', '').strip()
-        print(f"Request phone number: {repr(phone_number)}")  # Debug: Log input
 
+
+        phone_number = request.data.get('phone_number', '').strip()
+        password = request.data.get('password', '').strip()
+        
+        print(f"Request phone number: {repr(phone_number)}")
+        
+        
         if not phone_number:
             return Response({'error': 'Phone number is required'}, status=status.HTTP_400_BAD_REQUEST)
-
+        if not password:
+            return Response({'error': 'Password is required'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        # Use the phone number as provided (assuming DB stores with +91)
+        query_phone_number = phone_number
+        
+        # Authenticate user with phone number and password
+        user = authenticate(request, username=phone_number, password=password)
+        
+        if user is None:
+            print(f"Authentication failed for phone number: {repr(phone_number)}")
+            return Response({'error': 'Invalid phone number or password'}, status=status.HTTP_401_UNAUTHORIZED)
+        
         try:
-            users = User.objects.filter(phone_number=phone_number)
-            print(f"Found {users.count()} users with phone number: {repr(phone_number)}")  # Debug: Log user count
-
-            if users.count() > 1:
-                return Response({'error': 'Multiple users found with this phone number'}, status=status.HTTP_400_BAD_REQUEST)
-            elif not users.exists():
-                return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
-
-            user = users.first()
-            print(f"Database phone number: {repr(user.phone_number)}")  # Debug: Log stored phone number
-
-            try:
-                profile = user.profile  # Access UserProfile
-            except AttributeError as e:
-                print(f"Profile access error: {str(e)}")  # Debug: Log profile error
-                return Response({'error': 'User profile not found'}, status=status.HTTP_404_NOT_FOUND)
-
-            refresh = RefreshToken.for_user(user)
-            return Response({
-                'refresh': str(refresh),
-                'access': str(refresh.access_token),
-                'user': UserSerializer(user).data,
-                'profile': UserProfileSerializer(profile).data
-            }, status=status.HTTP_200_OK)
-        except User.DoesNotExist:  # Fallback for unexpected query issues
-            print(f"Unexpected User.DoesNotExist for phone_number: {repr(phone_number)}")
-            return Response({'error': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
-        except Exception as e:
-            print(f"Unexpected error: {str(e)}")  # Debug: Log unexpected errors
-            return Response({'error': f'An unexpected error occurred: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
-
-
-
+            profile = user.profile
+            if profile.user_role != 'counsellor':
+                return Response({'error': 'User is not a counsellor'}, status=status.HTTP_403_FORBIDDEN)
+            
+        except UserProfile.DoesNotExist:
+            return Response({'error': 'User profile not found'}, status=status.HTTP_404_NOT_FOUND)
+        
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            'refresh': str(refresh),
+            'access': str(refresh.access_token),
+            'user': UserSerializer(user).data,
+            'profile': UserProfileSerializer(profile).data
+        }, status=status.HTTP_200_OK)

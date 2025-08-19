@@ -9,7 +9,7 @@ class BookingSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Booking
-        fields = ['id', 'user', 'counsellor', 'order_id', 'amount', 'status', 'created_at', 'scheduled_at']        
+        fields = ['id', 'user', 'counsellor', 'order_id', 'amount', 'status', 'created_at', 'scheduled_at', 'session_duration']        
         
 class CallRequestSerializer(serializers.ModelSerializer):
     booking = BookingSerializer(read_only=True)

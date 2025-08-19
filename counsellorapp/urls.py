@@ -12,6 +12,7 @@ urlpatterns = [
     path('profile/', views.CounsellorProfileView.as_view(), name='counsellor-profile'),
     path('status/', views.CounsellorStatusView.as_view(), name='counsellor-status'),
     path('payment-settings/', views.CounsellorPaymentSettingsView.as_view(), name='payment-settings'),
+    path('payment-settings/<int:user_id>/', views.CounsellorPaymentDetailView.as_view(), name='payment-settings-detail'),
     path('status/<int:booking_id>/', views.CallStatusView.as_view(), name='call-status'),
     path('accept/', views.AcceptCallView.as_view(), name='accept-call'),
     path('reject/', views.RejectCallView.as_view(), name='reject-call'),

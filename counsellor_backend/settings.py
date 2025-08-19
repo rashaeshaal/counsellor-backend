@@ -110,6 +110,7 @@ REST_FRAMEWORK = {
     ],
 }
 AUTHENTICATION_BACKENDS = [
+    'userdetails.auth_backends.PhoneNumberBackend',
     'django.contrib.auth.backends.ModelBackend',
 ]
 
@@ -213,6 +214,11 @@ LOGGING = {
         'dashboard.views': {
             'handlers': ['console'],
             'level': 'INFO',
+        },
+        'userdetails': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
         },
     },
 }

@@ -610,6 +610,7 @@ class CounsellorPaymentSettingsAPIView(APIView):
 
     def post(self, request):
         try:
+            
             logger.debug(f"Creating payment settings with data: {request.data}")
             required_fields = ['user_id', 'session_fee', 'session_duration']
             missing_fields = [field for field in required_fields if field not in request.data]
@@ -702,6 +703,10 @@ class CounsellorPaymentSettingsAPIView(APIView):
                 {'error': f'Error updating payment settings: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+            
+            
+            
+            
             
 from rest_framework.parsers import MultiPartParser, FormParser
 class ProblemAPIView(APIView):

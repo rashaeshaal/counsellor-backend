@@ -55,6 +55,20 @@ class CounsellorPaymentSettingsView(APIView):
             serializer.save(counsellor=counsellor)
             return Response(serializer.data)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class CounsellorPaymentDetailView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, user_id):
+        try:
+            payment_settings = CounsellorPayment.objects.get(
+                counsellor__user__id=user_id,
+                counsellor__user_role='counsellor'
+            )
+            serializer = CounsellorPaymentSerializer(payment_settings)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except CounsellorPayment.DoesNotExist:
+            return Response({'error': 'Payment settings not found'}, status=status.HTTP_404_NOT_FOUND)
            
 class CounsellorStatusView(APIView):
     permission_classes = [IsAuthenticated]

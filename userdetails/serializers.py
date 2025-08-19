@@ -6,6 +6,20 @@ from counsellorapp.serializers import CounsellorPaymentSerializer
 from counsellorapp.models import CounsellorPayment
 
 
+class MappedChoiceField(serializers.ChoiceField):
+    def to_internal_value(self, data):
+        # First, try the parent's implementation. This will handle keys.
+        try:
+            return super().to_internal_value(data)
+        except serializers.ValidationError:
+            # If that fails, try to match by display name.
+            for key, display_name in self.choices.items():
+                if str(display_name).lower() == str(data).lower():
+                    return key
+            # If both fail, re-raise the validation error.
+            self.fail('invalid_choice', input=data)
+
+
 class FirebaseAuthSerializer(serializers.Serializer):
     id_token = serializers.CharField(required=True)
 
@@ -81,12 +95,7 @@ class OTPVerificationSerializer(serializers.Serializer):
         return value
     
 class UserProfileUpdateSerializer(serializers.ModelSerializer):
+    gender = MappedChoiceField(choices=UserProfile.GENDER_CHOICES, required=False)
     class Meta:
         model = UserProfile
         fields = ['name', 'age', 'gender']
-        
-        extra_kwargs = {
-            'name': {'required': True},
-            'age': {'required': True},
-            'gender': {'required': True}
-        }

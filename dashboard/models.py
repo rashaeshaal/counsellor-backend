@@ -19,6 +19,7 @@ class Booking(models.Model):
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     razorpay_payment_id = models.CharField(max_length=100, null=True, blank=True)
+    session_duration = models.IntegerField(null=True, blank=True)  # In minutes
     created_at = models.DateTimeField(auto_now_add=True)
     scheduled_at = models.DateTimeField(null=True, blank=True) 
 
