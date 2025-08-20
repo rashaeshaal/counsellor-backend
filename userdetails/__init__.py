@@ -7,7 +7,7 @@ import os
 load_dotenv()
 
 # Initialize Firebase Admin SDK
-cred_path = os.getenv('FIREBASE_CRED_PATH')
+cred_path = os.getenv('FIREBASE_CREDENTIALS')
 if not os.path.exists(cred_path):
     raise FileNotFoundError(f"Firebase credentials file not found at: {cred_path}")
 cred = credentials.Certificate(cred_path)
