@@ -206,7 +206,9 @@ class UserProfileRegisterView(APIView):
 
         # Create UserProfile for counsellor
         
-        serializer = UserProfileSerializer(data=request.data, context={'user': user})
+        serializer = UserProfileSerializer(data={**request.data, **request.FILES},
+                                           context={'user': user}
+                                           )
         if serializer.is_valid():
             profile = serializer.save(
                 user_role='counsellor',
