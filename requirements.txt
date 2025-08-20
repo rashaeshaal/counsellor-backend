@@ -141,3 +141,5 @@ uritemplate==4.2.0
 urllib3==2.5.0
 
 zope.interface==7.2
+
+gunicorn==21.2.0
