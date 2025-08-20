@@ -52,6 +52,14 @@ class UserProfileSerializer(serializers.ModelSerializer):
         super().__init__(*args, **kwargs)
 
     def validate(self, data):
+        phone_number = data.get('phone_number')
+        email = data.get('email')
+
+        if User.objects.filter(phone_number=phone_number).exists():
+            raise serializers.ValidationError({"phone_number": "A user with this phone number already exists."})
+        if User.objects.filter(email=email).exists():
+            raise serializers.ValidationError({"email": "A user with this email already exists."})
+
         if data.get('user_role') == 'counsellor':
             required_fields = [
                 'name', 'email', 'age', 'gender', 'qualification',
