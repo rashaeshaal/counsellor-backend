@@ -26,7 +26,7 @@ class CallRequestSerializer(serializers.ModelSerializer):
 class WalletSerializer(serializers.ModelSerializer):
     class Meta:
         model = Wallet
-        fields = ['balance', 'created_at', 'updated_at']
+        fields = ['balance', 'extra_minutes', 'created_at', 'updated_at']
 
 class WalletTransactionSerializer(serializers.ModelSerializer):
     class Meta:
