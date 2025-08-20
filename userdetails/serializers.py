@@ -39,6 +39,18 @@ class UserProfileSerializer(serializers.ModelSerializer):
     email = serializers.EmailField(required=True)
     phone_number = serializers.CharField(required=True)
 
+    def __init__(self, *args, **kwargs):
+        data = kwargs.get('data')
+        if data:
+            cleaned_data = {}
+            for key, value in data.items():
+                if isinstance(value, list) and len(value) == 1:
+                    cleaned_data[key] = value[0]
+                else:
+                    cleaned_data[key] = value
+            kwargs['data'] = cleaned_data
+        super().__init__(*args, **kwargs)
+
     def validate(self, data):
         if data.get('user_role') == 'counsellor':
             required_fields = [
@@ -51,7 +63,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
         return data
 
     def validate_age(self, value):
-        if value and (value < 18 or value > 100):
+        if value and (int(value) < 18 or int(value) > 100):
             raise serializers.ValidationError("Age must be between 18 and 100.")
         return value
 
