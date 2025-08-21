@@ -55,10 +55,11 @@ class UserProfileSerializer(serializers.ModelSerializer):
         phone_number = data.get('phone_number')
         email = data.get('email')
 
-        if User.objects.filter(phone_number=phone_number).exists():
-            raise serializers.ValidationError({"phone_number": "A user with this phone number already exists."})
-        if User.objects.filter(email=email).exists():
-            raise serializers.ValidationError({"email": "A user with this email already exists."})
+        # ✅ Check for duplicate UserProfile instead of User
+        if UserProfile.objects.filter(phone_number=phone_number).exists():
+            raise serializers.ValidationError({"phone_number": "A profile with this phone number already exists."})
+        if UserProfile.objects.filter(email=email).exists():
+            raise serializers.ValidationError({"email": "A profile with this email already exists."})
 
         if data.get('user_role') == 'counsellor':
             required_fields = [
@@ -69,6 +70,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
                 if not data.get(field):
                     raise serializers.ValidationError({field: f"{field} is required for counsellors."})
         return data
+
 
     def validate_age(self, value):
         if value and (int(value) < 18 or int(value) > 100):
