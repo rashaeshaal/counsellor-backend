@@ -12,6 +12,6 @@ urlpatterns = [
     path('problems/', views.ProblemListView.as_view(), name='problem-list'),
     path('user-problems/', views.UserProblemView.as_view(), name='user-problem'),
     path('profile/', views.UserProfileEditView.as_view(), name='user-profile-edit'),
-    path('counsellors/<int:user_id>/', views.CounsellorDetailView.as_view(), name='counsellor-detail')
-    
+    path('counsellors/<int:user_id>/', views.CounsellorDetailView.as_view(), name='counsellor-detail'),
+    path('call/end/', views.EndCallView.as_view(), name='end-call')
 ]

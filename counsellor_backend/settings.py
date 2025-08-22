@@ -154,9 +154,11 @@ AUTH_USER_MODEL = 'userdetails.User'
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
-    "http://localhost:8000",
+    "http://localhost:8100",
     "http://localhost:4200",
-    'http://192.168.1.33:4201', 
+    'http://192.168.1.33:4201',
+    "capacitor://localhost",   # Capacitor apps
+    "ionic://localhost", 
 ] 
 
 STATIC_URL = 'static/'
