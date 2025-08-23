@@ -56,10 +56,22 @@ class UserProfileSerializer(serializers.ModelSerializer):
         email = data.get('email')
 
         # ✅ Check for duplicate UserProfile instead of User
-        if UserProfile.objects.filter(phone_number=phone_number).exists():
-            raise serializers.ValidationError({"phone_number": "A profile with this phone number already exists."})
-        if UserProfile.objects.filter(email=email).exists():
-            raise serializers.ValidationError({"email": "A profile with this email already exists."})
+        # Exclude current instance during update for uniqueness checks
+        instance = self.instance
+        
+        if phone_number:
+            qs = UserProfile.objects.filter(phone_number=phone_number)
+            if instance:
+                qs = qs.exclude(pk=instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError({"phone_number": "A profile with this phone number already exists."})
+        
+        if email:
+            qs = UserProfile.objects.filter(email=email)
+            if instance:
+                qs = qs.exclude(pk=instance.pk)
+            if qs.exists():
+                raise serializers.ValidationError({"email": "A profile with this email already exists."})
 
         if data.get('user_role') == 'counsellor':
             required_fields = [
