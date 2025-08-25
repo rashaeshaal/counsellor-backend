@@ -171,7 +171,7 @@ class UserProfileRegisterView(APIView):
         phone_number = request.data.get('phone_number')
         password = request.data.get('password')
         required_fields = [
-            'phone_number', 'name', 'email', 'password', 'dob', 'age'
+            'phone_number', 'name', 'email', 'password', 'age'
         ]
 
         # Check for all required fields
