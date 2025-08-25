@@ -34,8 +34,8 @@ class UserSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'created_at']
 
 class UserProfileSerializer(serializers.ModelSerializer):
-    age = serializers.IntegerField(required=True, min_value=0)
-    experience = serializers.IntegerField(required=True, min_value=0)
+    age = serializers.IntegerField(required=False, min_value=0)
+    experience = serializers.IntegerField(required=False, min_value=0)
     email = serializers.EmailField(required=True)
     phone_number = serializers.CharField(required=True)
 
@@ -75,8 +75,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
 
         if data.get('user_role') == 'counsellor':
             required_fields = [
-                'name', 'email', 'age', 'gender', 'qualification',
-                'experience', 'google_pay_number', 'account_number', 'ifsc_code'
+                'name', 'email', 'dob', 'age'
             ]
             for field in required_fields:
                 if not data.get(field):
@@ -98,7 +97,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfile
         fields = [
-            'id','user_role', 'phone_number', 'name', 'email', 'age', 'gender',
+            'id','user_role', 'phone_number', 'name', 'email', 'dob', 'age', 'gender',
             'qualification', 'experience', 'google_pay_number', 'account_number',
             'ifsc_code', 'is_approved', 'is_active', 'profile_photo', 'firebase_uid','user_id'
         ]

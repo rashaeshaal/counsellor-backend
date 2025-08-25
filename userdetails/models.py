@@ -97,6 +97,7 @@ class UserProfile(models.Model):
     )
     name = models.CharField(max_length=100, blank=True, null=True)
     email = models.EmailField(unique=True, blank=True, null=True)
+    dob = models.DateField(blank=True, null=True)
     age = models.IntegerField(blank=True, null=True)
     gender = models.CharField(max_length=1, choices=GENDER_CHOICES, blank=True, null=True)
     qualification = models.TextField(max_length=500, blank=True, null=True)

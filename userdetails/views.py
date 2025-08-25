@@ -160,6 +160,7 @@ class UserRegistrationView(APIView):
 
 
 
+
 class UserProfileRegisterView(APIView):
     permission_classes = [AllowAny]
 
@@ -170,8 +171,7 @@ class UserProfileRegisterView(APIView):
         phone_number = request.data.get('phone_number')
         password = request.data.get('password')
         required_fields = [
-            'phone_number', 'name', 'email', 'age', 'gender', 'qualification',
-            'experience', 'google_pay_number', 'account_number', 'ifsc_code', 'password'
+            'phone_number', 'name', 'email', 'password', 'dob', 'age'
         ]
 
         # Check for all required fields
@@ -227,7 +227,10 @@ class UserProfileRegisterView(APIView):
         logger.error(f"Serializer errors: {serializer.errors}")
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
-    
+
+
+
+
 class UserLoginView(APIView):
     permission_classes = [AllowAny]
 
