@@ -195,7 +195,7 @@ class VerifyPaymentView(APIView):
                     return Response(
                         {
                             'booking_id': booking.id,
-                            'status': 'Payment credited to wallet',
+                            'status': 'Payment Successful',
                             'wallet_balance': wallet.balance
                         },
                         status=status.HTTP_200_OK

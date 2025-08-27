@@ -146,9 +146,16 @@ class UserRegistrationView(APIView):
             profile.gender = serializer.validated_data.get('gender')
             profile.save()
 
+            # Add logic to update user's email
+            email = serializer.validated_data.get('email')
+            if email is not None:
+                user.email = email
+                user.save()
+
             return Response({
                 'message': 'User profile updated successfully',
-                'profile': UserProfileUpdateSerializer(profile).data
+                'profile': UserProfileUpdateSerializer(profile).data,
+                'user': UserSerializer(user).data
             }, status=status.HTTP_200_OK)
 
         except Exception as e:

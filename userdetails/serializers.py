@@ -129,6 +129,7 @@ class OTPVerificationSerializer(serializers.Serializer):
     
 class UserProfileUpdateSerializer(serializers.ModelSerializer):
     gender = MappedChoiceField(choices=UserProfile.GENDER_CHOICES, required=False)
+    email = serializers.EmailField(required=False)
     class Meta:
         model = UserProfile
-        fields = ['name', 'age', 'gender']
+        fields = ['name', 'age', 'gender', 'email']
