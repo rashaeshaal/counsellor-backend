@@ -31,4 +31,9 @@ class WalletSerializer(serializers.ModelSerializer):
 class WalletTransactionSerializer(serializers.ModelSerializer):
     class Meta:
         model = WalletTransaction
-        fields = ['amount', 'transaction_type', 'description', 'created_at', 'related_booking']        
+        fields = ['amount', 'transaction_type', 'description', 'created_at', 'related_booking']
+
+class WalletExtraMinutesSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Wallet
+        fields = ['extra_minutes']        

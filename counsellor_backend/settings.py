@@ -227,3 +227,7 @@ LOGGING = {
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+# Zego Cloud Settings
+ZEGO_APP_ID = config('ZEGO_APP_ID', cast=int)  # Replace with your actual App ID
+ZEGO_SERVER_SECRET = config("ZEGO_SERVER_SECRET")

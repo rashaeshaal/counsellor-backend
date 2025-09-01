@@ -2,8 +2,7 @@ from rest_framework import serializers
 from django.core.validators import RegexValidator
 import re
 from .models import User, UserProfile
-from counsellorapp.serializers import CounsellorPaymentSerializer
-from counsellorapp.models import CounsellorPayment
+
 
 
 class MappedChoiceField(serializers.ChoiceField):

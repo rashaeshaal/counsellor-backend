@@ -25,7 +25,7 @@ urlpatterns = [
     path('api/counsellor/', include('counsellorapp.urls')),
     path('api/auth/', include('userdetails.urls')),
     path('api/dashboard/', include('dashboard.urls')),
-    path('api/admins/', include('adminapp.urls')),
+    path('api/adminapp/', include('adminapp.urls')),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-]+ static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 

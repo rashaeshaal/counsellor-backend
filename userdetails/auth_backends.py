@@ -1,6 +1,51 @@
+import firebase_admin
+from firebase_admin import credentials, auth
+from django.contrib.auth import get_user_model
+from rest_framework import authentication
+from rest_framework import exceptions
+from django.conf import settings
 import logging
 from django.contrib.auth.backends import ModelBackend
-from django.contrib.auth import get_user_model
+
+# Initialize Firebase Admin SDK
+# Make sure to replace 'path/to/your/serviceAccountKey.json' with the actual path to your Firebase service account key.
+# It's recommended to store this path in your Django settings.
+try:
+    # cred = credentials.Certificate(settings.FIREBASE_ADMIN_SDK_SERVICE_ACCOUNT_KEY)
+    # firebase_admin.initialize_app(cred)
+    pass
+except Exception as e:
+    logging.error(f"Failed to initialize Firebase Admin SDK: {e}")
+
+
+class FirebaseAuthentication(authentication.BaseAuthentication):
+    def authenticate(self, request):
+        auth_header = request.headers.get('Authorization')
+        if not auth_header:
+            return None
+
+        try:
+            id_token = auth_header.split(' ').pop()
+            decoded_token = auth.verify_id_token(id_token)
+        except Exception as e:
+            logging.error(f"Failed to decode Firebase ID token: {e}")
+            raise exceptions.AuthenticationFailed('Invalid Firebase ID token')
+
+        if not id_token or not decoded_token:
+            return None
+
+        try:
+            uid = decoded_token.get('uid')
+            User = get_user_model()
+            user, created = User.objects.get_or_create(firebase_uid=uid)
+            if created:
+                # You might want to populate the user model with more data from the decoded_token
+                # For example: user.email = decoded_token.get('email')
+                user.save()
+            return (user, None)
+        except Exception as e:
+            logging.error(f"Failed to get or create user from Firebase UID: {e}")
+            raise exceptions.AuthenticationFailed('User authentication failed')
 
 logger = logging.getLogger(__name__)
 
@@ -20,4 +65,12 @@ class PhoneNumberBackend(ModelBackend):
             return user
         else:
             logger.debug(f"Password check failed for user: {user.phone_number}")
+            return None
+
+
+    def get_user(self, user_id):
+        UserModel = get_user_model()
+        try:
+            return UserModel.objects.get(pk=user_id)
+        except UserModel.DoesNotExist:
             return None

@@ -14,4 +14,7 @@ urlpatterns = [
     path('register-user/', views.UserRegistrationView.as_view(), name='user-registration'),
    
   
+   
+
+  
 ]

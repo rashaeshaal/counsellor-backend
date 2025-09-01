@@ -30,6 +30,10 @@ from userdetails.models import Wallet, WalletTransaction
 from decimal import Decimal
 from adminapp.models import UserProblem, Problem
 from adminapp.serializers import UserProblemSerializer, ProblemSerializer
+from django.http import JsonResponse
+from django.views.decorators.http import require_http_methods
+import json
+from .zego_token_generator import generate_token
 # Create your views here.
 class CounsellorListView(APIView):
     permission_classes = [AllowAny]
@@ -644,5 +648,50 @@ class CounsellorDetailView(APIView):
             return Response(serializer.data, status=status.HTTP_200_OK)
         except UserProfile.DoesNotExist:
             return Response({"error": "Counsellor not found"}, status=status.HTTP_404_NOT_FOUND)
+
+from userdetails.auth_backends import FirebaseAuthentication
+from .serializers import WalletExtraMinutesSerializer
+
+class WalletExtraMinutesView(APIView):
+    authentication_classes = [FirebaseAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        try:
+            wallet = Wallet.objects.get(user=request.user.userprofile)
+            serializer = WalletExtraMinutesSerializer(wallet)
+            return Response(serializer.data)
+        except Wallet.DoesNotExist:
+            return Response({"extra_minutes": 0}, status=status.HTTP_200_OK)
+        except Exception as e:
+            logger.error(f"Error fetching extra minutes for user {request.user.id}: {str(e)}")
+            return Response(
+                {'error': 'Failed to fetch extra minutes'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+@csrf_exempt # Use appropriate authentication for production instead of csrf_exempt
+@require_http_methods(["POST"])
+def generate_zego_token(request):
+    try:
+        data = json.loads(request.body)
+        user_id = data.get('userID')
+        room_id = data.get('roomID')
+
+        if not user_id or not room_id:
+            return JsonResponse({'error': 'userID and roomID are required'}, status=400)
+
+        # Get credentials from settings
+        app_id = settings.ZEGO_APP_ID
+        server_secret = settings.ZEGO_SERVER_SECRET
+
+        # Generate the token
+        token = generate_token(app_id, server_secret, user_id, room_id)
+
+        return JsonResponse({'kitToken': token})
+
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
         
         
