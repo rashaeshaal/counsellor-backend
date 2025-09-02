@@ -20,6 +20,7 @@ from pathlib import Path
 
 import firebase_admin
 from firebase_admin import credentials
+import json
 
 # Build paths
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -104,10 +105,25 @@ DATABASES = {
 }
 
 # Firebase initialization
-FIREBASE_SERVICE_ACCOUNT_KEY = config('FIREBASE_CRED_PATH')
+FIREBASE_CREDENTIALS_JSON = os.getenv('FIREBASE_CREDENTIALS_JSON')
+
 if not firebase_admin._apps:
-    cred = credentials.Certificate(FIREBASE_SERVICE_ACCOUNT_KEY)
-    firebase_admin.initialize_app(cred)
+    if FIREBASE_CREDENTIALS_JSON:
+        try:
+            cred_dict = json.loads(FIREBASE_CREDENTIALS_JSON)
+            cred = credentials.Certificate(cred_dict)
+            firebase_admin.initialize_app(cred)
+        except ValueError as e:
+            print(f"Error parsing FIREBASE_CREDENTIALS_JSON: {e}")
+            # Handle error, maybe raise an exception or log it
+    else:
+        FIREBASE_CRED_PATH = config('FIREBASE_CRED_PATH', default=None)
+        if FIREBASE_CRED_PATH:
+            cred = credentials.Certificate(FIREBASE_CRED_PATH)
+            firebase_admin.initialize_app(cred)
+        else:
+            print("Neither FIREBASE_CREDENTIALS_JSON nor FIREBASE_CRED_PATH is set.")
+            # Handle error, maybe raise an exception or log it
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
