@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import UpcomingSessionsView, RecentActivityView, CounsellorProfileView, CounsellorPaymentSettingsView,CounsellorPaymentDetailView
+from .views import UpcomingSessionsView, RecentActivityView, CounsellorProfileView, CounsellorPaymentSettingsView,CounsellorPaymentDetailView,CounsellorStatusView
 
 from rest_framework_simplejwt.views import TokenRefreshView
 
