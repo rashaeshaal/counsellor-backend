@@ -2,13 +2,51 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from dashboard.models import Booking
-from .serializers import UpcomingSessionSerializer
+from .serializers import UpcomingSessionSerializer, RecentActivitySerializer, CounsellorPaymentSerializer
 from django.utils import timezone
+from userdetails.models import UserProfile
+from userdetails.serializers import UserProfileSerializer
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from django.shortcuts import render
+# views.py
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth import get_user_model
+from rest_framework import status
+from itertools import chain
+from .models import CounsellorPayment
+from django.utils import timezone
+from django.conf import settings
+import firebase_admin
+from firebase_admin import credentials, auth
+import logging
+from django.views.decorators.csrf import csrf_exempt
+import razorpay
+import hmac
+import hashlib
+from dashboard.models import Booking, CallRequest
+from userdetails.models import User, UserProfile, OTPAttempt
+from .serializers import CounsellorPaymentSerializer
+from .models import CounsellorPayment
+from userdetails.models import UserProfile
+from userdetails.serializers import UserProfileSerializer
+from userdetails.serializers import FirebaseAuthSerializer, UserProfileSerializer, UserSerializer
+from dashboard.serializers import BookingSerializer
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
 from userdetails.auth_backends import FirebaseAuthentication
 
+
+
+logger = logging.getLogger(__name__)
+
+
 class UpcomingSessionsView(APIView):
-    authentication_classes = [FirebaseAuthentication]
     permission_classes = [IsAuthenticated]
+
 
     def get(self, request):
         try:
@@ -26,12 +64,11 @@ class UpcomingSessionsView(APIView):
         serializer = UpcomingSessionSerializer(upcoming_sessions, many=True)
         return Response(serializer.data)
 
-from .serializers import RecentActivitySerializer
-from itertools import chain
 
 class RecentActivityView(APIView):
-    authentication_classes = [FirebaseAuthentication]
+    
     permission_classes = [IsAuthenticated]
+ 
 
     def get(self, request):
         try:
@@ -67,3 +104,88 @@ class RecentActivityView(APIView):
 
         serializer = RecentActivitySerializer(activities, many=True)
         return Response(serializer.data)
+
+
+class CounsellorProfileView(APIView):
+    permission_classes = [IsAuthenticated]
+   
+
+    def get(self, request):
+        try:
+            user_profile = request.user.userprofile
+        except UserProfile.DoesNotExist:
+            return Response({"detail": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if user_profile.user_role != 'counsellor':
+            return Response({"detail": "Access denied. Only counsellors can view this profile."}, status=status.HTTP_403_FORBIDDEN)
+
+        serializer = UserProfileSerializer(user_profile)
+        return Response({"counsellor": serializer.data})
+
+    def put(self, request):
+        try:
+            user_profile = request.user.userprofile
+        except UserProfile.DoesNotExist:
+            return Response({"detail": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if user_profile.user_role != 'counsellor':
+            return Response({"detail": "Access denied. Only counsellors can update this profile."}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Ensure profile_photo is handled correctly for multipart/form-data
+        # request.data will already contain parsed data for both fields and files
+        serializer = UserProfileSerializer(user_profile, data=request.data, partial=True)
+        if serializer.is_valid():
+            serializer.save()
+            return Response({"counsellor": serializer.data})
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class CounsellorPaymentSettingsView(APIView):
+    permission_classes = [IsAuthenticated]
+  
+
+    def get(self, request, user_id):
+        try:
+            user_profile = UserProfile.objects.get(id=user_id)
+        except UserProfile.DoesNotExist:
+            return Response({"detail": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        if user_profile.user_role != 'counsellor':
+            return Response({"detail": "Access denied. User is not a counsellor."}, status=status.HTTP_403_FORBIDDEN)
+
+        try:
+            payment_settings = CounsellorPayment.objects.get(counsellor=user_profile)
+        except CounsellorPayment.DoesNotExist:
+            return Response({"detail": "Counsellor payment settings not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = CounsellorPaymentSerializer(payment_settings)
+        return Response(serializer.data)
+    
+class CounsellorStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            counsellor = UserProfile.objects.get(user=request.user)
+            counsellor.is_active = not counsellor.is_active
+            counsellor.save()
+            return Response({'is_active': counsellor.is_active})
+        except UserProfile.DoesNotExist:
+            return Response({'error': 'Counsellor profile not found'}, status=status.HTTP_404_NOT_FOUND)  
+        
+        
+
+class CounsellorPaymentDetailView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request, user_id):
+        try:
+            payment_settings = CounsellorPayment.objects.get(
+                counsellor__user__id=user_id,
+                counsellor__user_role='counsellor'
+            )
+            serializer = CounsellorPaymentSerializer(payment_settings)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+        except CounsellorPayment.DoesNotExist:
+            return Response({'error': 'Payment settings not found'}, status=status.HTTP_404_NOT_FOUND)
+                      

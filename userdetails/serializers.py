@@ -35,8 +35,8 @@ class UserSerializer(serializers.ModelSerializer):
 class UserProfileSerializer(serializers.ModelSerializer):
     age = serializers.IntegerField(required=False, min_value=0)
     experience = serializers.IntegerField(required=False, min_value=0)
-    email = serializers.EmailField(required=True)
-    phone_number = serializers.CharField(required=True)
+    email = serializers.EmailField(required=False) # Make email not required for partial updates
+    phone_number = serializers.CharField(required=False) # Make phone_number not required for partial updates
 
     def __init__(self, *args, **kwargs):
         data = kwargs.get('data')
@@ -54,8 +54,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
         phone_number = data.get('phone_number')
         email = data.get('email')
 
-        # ✅ Check for duplicate UserProfile instead of User
-        # Exclude current instance during update for uniqueness checks
         instance = self.instance
         
         if phone_number:
@@ -72,18 +70,19 @@ class UserProfileSerializer(serializers.ModelSerializer):
             if qs.exists():
                 raise serializers.ValidationError({"email": "A profile with this email already exists."})
 
+        # Removed 'dob' from required_fields for counsellors as it's not in frontend
         if data.get('user_role') == 'counsellor':
             required_fields = [
-                'name', 'email', 'dob', 'age'
+                'name', 'email', 'age'
             ]
             for field in required_fields:
-                if not data.get(field):
+                if not data.get(field) and self.instance is None: # Only require for creation, not partial update
                     raise serializers.ValidationError({field: f"{field} is required for counsellors."})
         return data
 
 
     def validate_age(self, value):
-        if value and (int(value) < 18 or int(value) > 100):
+        if value is not None and (int(value) < 18 or int(value) > 100):
             raise serializers.ValidationError("Age must be between 18 and 100.")
         return value
 
@@ -100,7 +99,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
             'qualification', 'experience', 'google_pay_number', 'account_number',
             'ifsc_code', 'is_approved', 'is_active', 'profile_photo', 'firebase_uid','user_id'
         ]
-        read_only_fields = ['user',  'firebase_uid']
+        read_only_fields = ['user',  'firebase_uid', 'user_id'] # user_id is read-only as it's derived from user
 
 
 class PhoneNumberSerializer(serializers.Serializer):
