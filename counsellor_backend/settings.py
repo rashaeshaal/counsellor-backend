@@ -18,7 +18,10 @@ import os
 from pathlib import Path
 
 
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+import firebase_admin
+from firebase_admin import credentials
+
+# Build paths
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
@@ -99,6 +102,12 @@ DATABASES = {
         'PORT': config('DB_PORT', default='5432'),
     }
 }
+
+# Firebase initialization
+FIREBASE_SERVICE_ACCOUNT_KEY = config('FIREBASE_CRED_PATH')
+if not firebase_admin._apps:
+    cred = credentials.Certificate(FIREBASE_SERVICE_ACCOUNT_KEY)
+    firebase_admin.initialize_app(cred)
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
