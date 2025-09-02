@@ -9,6 +9,6 @@ urlpatterns = [
     path('recent-activity/', RecentActivityView.as_view(), name='recent-activity'),
     path('profile/', CounsellorProfileView.as_view(), name='counsellor-profile'),
     path('payment-settings/<int:user_id>/', CounsellorPaymentDetailView.as_view(), name='counsellor-payment-settings'),
-    path('payment-settings/', views.CounsellorPaymentSettingsView.as_view(), name='payment-settings'),
-    path('status/', views.CounsellorStatusView.as_view(), name='counsellor-status'),
+    path('payment-settings/', CounsellorPaymentSettingsView.as_view(), name='payment-settings'),
+    path('status/', CounsellorStatusView.as_view(), name='counsellor-status'),
 ]
