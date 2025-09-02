@@ -105,24 +105,10 @@ DATABASES = {
 }
 
 # Firebase initialization
-FIREBASE_CREDENTIALS_JSON = os.getenv('FIREBASE_CREDENTIALS_JSON')
-
+FIREBASE_SERVICE_ACCOUNT_KEY = os.path.join(BASE_DIR, 'firebase-adminsdk.json')
 if not firebase_admin._apps:
-    if FIREBASE_CREDENTIALS_JSON:
-        try:
-            cred_dict = json.loads(FIREBASE_CREDENTIALS_JSON)
-            cred = credentials.Certificate(cred_dict)
-            firebase_admin.initialize_app(cred)
-        except ValueError as e:
-            print(f"Error parsing FIREBASE_CREDENTIALS_JSON: {e}")
-            # Handle error, maybe raise an exception or log it
-    else:
-        FIREBASE_CRED_PATH = config('FIREBASE_CRED_PATH', default=None)
-        if FIREBASE_CRED_PATH:
-            cred = credentials.Certificate(FIREBASE_CRED_PATH)
-            firebase_admin.initialize_app(cred)
-        else:
-            print("Neither FIREBASE_CREDENTIALS_JSON nor FIREBASE_CRED_PATH is set.")
+    cred = credentials.Certificate(FIREBASE_SERVICE_ACCOUNT_KEY)
+    firebase_admin.initialize_app(cred)
             # Handle error, maybe raise an exception or log it
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
