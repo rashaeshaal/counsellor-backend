@@ -2,7 +2,7 @@
 from django.urls import path, include
 from rest_framework_simplejwt.views import TokenRefreshView
 from . import views
-from .views import WalletExtraMinutesView, generate_zego_token
+from .views import WalletExtraMinutesView
 
 urlpatterns = [
     path('counsellors/', views.CounsellorListView.as_view(), name='counsellor-list'),
