@@ -105,11 +105,12 @@ DATABASES = {
 }
 
 # Firebase initialization
-FIREBASE_SERVICE_ACCOUNT_KEY = os.path.join(BASE_DIR, 'firebase-adminsdk.json')
+FIREBASE_CREDENTIALS = config('FIREBASE_CREDENTIALS')
 if not firebase_admin._apps:
-    cred = credentials.Certificate(FIREBASE_SERVICE_ACCOUNT_KEY)
+    cred_dict = json.loads(FIREBASE_CREDENTIALS)
+    cred = credentials.Certificate(cred_dict)
     firebase_admin.initialize_app(cred)
-            # Handle error, maybe raise an exception or log it
+    
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework_simplejwt.authentication.JWTAuthentication',
