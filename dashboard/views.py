@@ -649,11 +649,10 @@ class CounsellorDetailView(APIView):
         except UserProfile.DoesNotExist:
             return Response({"error": "Counsellor not found"}, status=status.HTTP_404_NOT_FOUND)
 
-from userdetails.auth_backends import FirebaseAuthentication
-from .serializers import WalletExtraMinutesSerializer
+
 
 class WalletExtraMinutesView(APIView):
-    authentication_classes = [FirebaseAuthentication]
+   
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -670,28 +669,407 @@ class WalletExtraMinutesView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+class GenerateZegoTokenView(APIView):
+    """Generate Zego token for audio call - API View version"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        try:
+            user_id = request.data.get('userID')
+            room_id = request.data.get('roomID')
 
-@csrf_exempt # Use appropriate authentication for production instead of csrf_exempt
-@require_http_methods(["POST"])
-def generate_zego_token(request):
-    try:
-        data = json.loads(request.body)
-        user_id = data.get('userID')
-        room_id = data.get('roomID')
+            if not user_id or not room_id:
+                return Response(
+                    {'error': 'userID and roomID are required'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
 
-        if not user_id or not room_id:
-            return JsonResponse({'error': 'userID and roomID are required'}, status=400)
+            # Validate that the user has permission for this room/booking
+            try:
+                booking_id = int(room_id)
+                booking = Booking.objects.get(id=booking_id)
+                
+                # Check if user is part of this booking
+                user_profile = getattr(request.user, 'profile', None)
+                if (request.user != booking.user and 
+                    user_profile != booking.counsellor):
+                    return Response(
+                        {'error': 'Permission denied for this booking'}, 
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+                
+            except (ValueError, Booking.DoesNotExist):
+                return Response(
+                    {'error': 'Invalid booking ID'}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
 
-        # Get credentials from settings
-        app_id = settings.ZEGO_APP_ID
-        server_secret = settings.ZEGO_SERVER_SECRET
+            # Get credentials from settings
+            app_id = settings.ZEGO_APP_ID
+            server_secret = settings.ZEGO_SERVER_SECRET
 
-        # Generate the token
-        token = generate_token(app_id, server_secret, user_id, room_id)
+            # Generate token with extended validity
+            token = generate_token(
+                app_id, 
+                server_secret, 
+                user_id, 
+                room_id, 
+                privilege_expire_in_seconds=3600
+            )
 
-        return JsonResponse({'kitToken': token})
+            # Log token generation for debugging
+            logger.info(f"Generated Zego token for user {user_id} in room {room_id}")
 
-    except Exception as e:
-        return JsonResponse({'error': str(e)}, status=500)
-        
-        
+            return Response({
+                'kitToken': token,
+                'roomID': room_id,
+                'userID': user_id,
+                'tokenExpiresAt': (timezone.now() + timedelta(hours=1)).isoformat()
+            })
+
+        except Exception as e:
+            logger.error(f"Error generating Zego token: {str(e)}")
+            return Response(
+                {'error': 'Failed to generate token'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class CallStatusView(APIView):
+    """Handle call status updates and notify relevant parties"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        try:
+            booking_id = request.data.get('booking_id')
+            user_role = request.data.get('user_role')
+            action = request.data.get('action')
+            timestamp = request.data.get('timestamp')
+
+            if not all([booking_id, user_role, action]):
+                return Response(
+                    {'error': 'Missing required fields'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Get booking details
+            try:
+                booking = Booking.objects.get(id=booking_id)
+            except Booking.DoesNotExist:
+                return Response(
+                    {'error': 'Booking not found'}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Get or create call request
+            call_request, created = CallRequest.objects.get_or_create(
+                booking=booking,
+                defaults={
+                    'counsellor': booking.counsellor,
+                    'user': booking.user,
+                    'status': 'PENDING'
+                }
+            )
+
+            # Prepare notification data
+            notification_data = {
+                'type': 'call_status',
+                'booking_id': booking_id,
+                'user_role': user_role,
+                'action': action,
+                'timestamp': timestamp,
+                'room_id': str(booking_id)
+            }
+
+            # Send real-time notification via WebSocket
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                group_name = f'call_{booking_id}'
+                async_to_sync(channel_layer.group_send)(
+                    group_name,
+                    {
+                        'type': 'call_notification',
+                        'message': notification_data
+                    }
+                )
+
+            # Update call request and booking status based on action
+            if action == 'joined':
+                if user_role == 'user':
+                    # User joined the call
+                    pass
+                elif user_role == 'counsellor':
+                    # Counsellor joined the call
+                    call_request.status = 'ACCEPTED'
+                    call_request.accepted_at = timezone.now()
+                    call_request.save()
+                
+                # Update booking status to completed when call starts
+                if booking.status == 'wallet_credited':
+                    booking.status = 'completed'
+                    booking.save()
+
+            elif action == 'left':
+                call_request.status = 'ENDED'
+                call_request.ended_at = timezone.now()
+                call_request.save()
+
+            return Response({
+                'status': 'success',
+                'message': 'Call status updated successfully',
+                'booking_status': booking.status,
+                'call_status': call_request.status
+            })
+
+        except Exception as e:
+            logger.error(f"Error updating call status: {str(e)}")
+            return Response(
+                {'error': 'Failed to update call status'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class CallStatusCheckView(APIView):
+    """Check the current status of a call"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, booking_id):
+        try:
+            booking = Booking.objects.get(id=booking_id)
+            
+            # Check if user has permission to view this booking
+            user_profile = getattr(request.user, 'profile', None)
+            if (request.user != booking.user and 
+                user_profile != booking.counsellor):
+                return Response(
+                    {'error': 'Permission denied'}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Get call request if exists
+            call_request = CallRequest.objects.filter(booking=booking).first()
+
+            response_data = {
+                'booking_id': booking.id,
+                'booking_status': booking.status,
+                'call_status': call_request.status if call_request else 'NOT_CREATED',
+                'counsellor_name': booking.counsellor.name or 'Counsellor',
+                'session_duration': booking.session_duration,
+                'created_at': booking.created_at.isoformat(),
+            }
+
+            if call_request:
+                response_data.update({
+                    'call_request_id': call_request.id,
+                    'requested_at': call_request.requested_at.isoformat(),
+                    'accepted_at': call_request.accepted_at.isoformat() if call_request.accepted_at else None,
+                    'ended_at': call_request.ended_at.isoformat() if call_request.ended_at else None,
+                })
+
+            return Response(response_data)
+
+        except Booking.DoesNotExist:
+            return Response(
+                {'error': 'Booking not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Error checking call status: {str(e)}")
+            return Response(
+                {'error': 'Failed to check call status'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+
+
+
+
+class InitiateCallNotificationView(APIView):
+    """Send notification to counsellor when user initiates a call"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        try:
+            booking_id = request.data.get('booking_id')
+            
+            if not booking_id:
+                return Response(
+                    {'error': 'booking_id is required'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            try:
+                booking = Booking.objects.get(id=booking_id)
+            except Booking.DoesNotExist:
+                return Response(
+                    {'error': 'Booking not found'}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Check if user owns this booking
+            if request.user != booking.user:
+                return Response(
+                    {'error': 'Permission denied'}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Create or get call request
+            call_request, created = CallRequest.objects.get_or_create(
+                booking=booking,
+                defaults={
+                    'counsellor': booking.counsellor,
+                    'user': booking.user,
+                    'status': 'PENDING'
+                }
+            )
+
+            # Send real-time notification via WebSocket
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                group_name = f'call_{booking_id}'
+                notification_data = {
+                    'type': 'incoming_call',
+                    'booking_id': booking_id,
+                    'call_request_id': call_request.id,
+                    'user_name': request.user.get_full_name() or request.user.username,
+                    'user_phone': getattr(request.user, 'phone_number', ''),
+                    'room_id': str(booking_id),
+                    'timestamp': timezone.now().isoformat()
+                }
+                
+                async_to_sync(channel_layer.group_send)(
+                    group_name,
+                    {
+                        'type': 'call_notification',
+                        'message': notification_data
+                    }
+                )
+
+            return Response({
+                'status': 'success',
+                'message': 'Call notification sent to counsellor',
+                'call_request_id': call_request.id
+            })
+
+        except Exception as e:
+            logger.error(f"Error sending call notification: {str(e)}")
+            return Response(
+                {'error': 'Failed to send notification'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class EndCallSessionView(APIView):
+    """Handle call termination and cleanup"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        try:
+            booking_id = request.data.get('booking_id')
+            ended_by = request.data.get('ended_by', 'user')  # 'user' or 'counsellor'
+            
+            if not booking_id:
+                return Response(
+                    {'error': 'booking_id is required'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            try:
+                booking = Booking.objects.get(id=booking_id)
+            except Booking.DoesNotExist:
+                return Response(
+                    {'error': 'Booking not found'}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Get call request
+            call_request = CallRequest.objects.filter(booking=booking).first()
+            if not call_request:
+                return Response(
+                    {'error': 'Call request not found'}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Update call request status
+            call_request.status = 'ENDED'
+            call_request.ended_at = timezone.now()
+            call_request.save()
+
+            # Send notifications via WebSocket
+            channel_layer = get_channel_layer()
+            if channel_layer:
+                group_name = f'call_{booking_id}'
+                end_notification = {
+                    'type': 'call_ended',
+                    'booking_id': booking_id,
+                    'call_request_id': call_request.id,
+                    'ended_by': ended_by,
+                    'timestamp': timezone.now().isoformat()
+                }
+
+                async_to_sync(channel_layer.group_send)(
+                    group_name,
+                    {
+                        'type': 'call_notification',
+                        'message': end_notification
+                    }
+                )
+
+            return Response({
+                'status': 'success',
+                'message': 'Call ended successfully',
+                'call_request_id': call_request.id
+            })
+
+        except Exception as e:
+            logger.error(f"Error ending call: {str(e)}")
+            return Response(
+                {'error': 'Failed to end call'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class ActiveBookingView(APIView):
+    """Get active booking for counsellor"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        try:
+            # Get counsellor profile
+            user_profile = getattr(request.user, 'profile', None)
+            if not user_profile or user_profile.user_role != 'counsellor':
+                return Response(
+                    {'error': 'User is not a counsellor'}, 
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Get active call request
+            active_call = CallRequest.objects.filter(
+                counsellor=user_profile,
+                status__in=['PENDING', 'ACCEPTED']
+            ).select_related('booking', 'user').first()
+
+            if not active_call:
+                return Response(
+                    {'message': 'No active bookings found'}, 
+                    status=status.HTTP_204_NO_CONTENT
+                )
+
+            return Response({
+                'booking_id': active_call.booking.id,
+                'call_request_id': active_call.id,
+                'user_name': active_call.user.get_full_name() or active_call.user.username,
+                'user_phone': getattr(active_call.user, 'phone_number', ''),
+                'status': active_call.status,
+                'requested_at': active_call.requested_at.isoformat(),
+                'session_duration': active_call.booking.session_duration,
+                'amount': str(active_call.booking.amount)
+            })
+
+        except Exception as e:
+            logger.error(f"Error getting active booking: {str(e)}")
+            return Response(
+                {'error': 'Failed to get active booking'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

@@ -16,5 +16,10 @@ urlpatterns = [
     path('profile/', views.UserProfileEditView.as_view(), name='user-profile-edit'),
     path('counsellors/<int:user_id>/', views.CounsellorDetailView.as_view(), name='counsellor-detail'),
     path('call/end/', views.EndCallView.as_view(), name='end-call'),
-    path('generate-zego-token/', views.generate_zego_token, name='generate-zego-token'),
+    path('generate-zego-token/', GenerateZegoTokenView.as_view(), name='generate-zego-token'),
+    path('call-status/', CallStatusView.as_view(), name='call-status'),
+    path('call-status/<int:booking_id>/', CallStatusCheckView.as_view(), name='call-status-check'),
+    path('initiate-call-notification/', InitiateCallNotificationView.as_view(), name='initiate-call-notification'),
+    path('end-call-session/', EndCallSessionView.as_view(), name='end-call-session'),
+    path('active-booking/', ActiveBookingView.as_view(), name='counsellor-active-booking'),
 ]
