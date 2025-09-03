@@ -50,7 +50,7 @@ class UpcomingSessionsView(APIView):
 
     def get(self, request):
         try:
-            counsellor = request.user.userprofile.counsellor
+            counsellor = request.user.profile.counsellor
         except AttributeError:
             return Response({"detail": "Counsellor profile not found for the current user."}, status=404)
 
@@ -72,7 +72,7 @@ class RecentActivityView(APIView):
 
     def get(self, request):
         try:
-            counsellor = request.user.userprofile.counsellor
+            counsellor = request.user.profile.counsellor
         except AttributeError:
             return Response({"detail": "Counsellor profile not found for the current user."}, status=404)
 
@@ -111,22 +111,23 @@ class CounsellorProfileView(APIView):
    
 
     def get(self, request):
-        if not hasattr(request.user, 'userprofile'):
+        try:
+           
+            user_profile = request.user.profile
+        except UserProfile.DoesNotExist:
             return Response({"detail": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
-        
-        user_profile = request.user.userprofile
 
         if user_profile.user_role != 'counsellor':
             return Response({"detail": "Access denied. Only counsellors can view this profile."}, status=status.HTTP_403_FORBIDDEN)
 
-        serializer = UserProfileSerializer(user_profile, context={'request': request})
+        serializer = UserProfileSerializer(user_profile)
         return Response({"counsellor": serializer.data})
 
     def put(self, request):
-        if not hasattr(request.user, 'userprofile'):
+        try:
+            user_profile = request.user.profile
+        except UserProfile.DoesNotExist:
             return Response({"detail": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
-            
-        user_profile = request.user.userprofile
 
         if user_profile.user_role != 'counsellor':
             return Response({"detail": "Access denied. Only counsellors can update this profile."}, status=status.HTTP_403_FORBIDDEN)
