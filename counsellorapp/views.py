@@ -111,23 +111,22 @@ class CounsellorProfileView(APIView):
    
 
     def get(self, request):
-        try:
-           
-            user_profile = request.user.userprofile
-        except UserProfile.DoesNotExist:
+        if not hasattr(request.user, 'userprofile'):
             return Response({"detail": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
+        
+        user_profile = request.user.userprofile
 
         if user_profile.user_role != 'counsellor':
             return Response({"detail": "Access denied. Only counsellors can view this profile."}, status=status.HTTP_403_FORBIDDEN)
 
-        serializer = UserProfileSerializer(user_profile)
+        serializer = UserProfileSerializer(user_profile, context={'request': request})
         return Response({"counsellor": serializer.data})
 
     def put(self, request):
-        try:
-            user_profile = request.user.userprofile
-        except UserProfile.DoesNotExist:
+        if not hasattr(request.user, 'userprofile'):
             return Response({"detail": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
+            
+        user_profile = request.user.userprofile
 
         if user_profile.user_role != 'counsellor':
             return Response({"detail": "Access denied. Only counsellors can update this profile."}, status=status.HTTP_403_FORBIDDEN)
