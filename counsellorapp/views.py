@@ -50,7 +50,7 @@ class UpcomingSessionsView(APIView):
 
     def get(self, request):
         try:
-            counsellor = request.user.profile.counsellor
+            counsellor = request.user.userprofile.counsellor
         except AttributeError:
             return Response({"detail": "Counsellor profile not found for the current user."}, status=404)
 
@@ -72,7 +72,7 @@ class RecentActivityView(APIView):
 
     def get(self, request):
         try:
-            counsellor = request.user.profile.counsellor
+            counsellor = request.user.userprofile.counsellor
         except AttributeError:
             return Response({"detail": "Counsellor profile not found for the current user."}, status=404)
 
@@ -113,7 +113,7 @@ class CounsellorProfileView(APIView):
     def get(self, request):
         try:
            
-            user_profile = request.user.profile
+            user_profile = request.user.userprofile
         except UserProfile.DoesNotExist:
             return Response({"detail": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -125,7 +125,7 @@ class CounsellorProfileView(APIView):
 
     def put(self, request):
         try:
-            user_profile = request.user.profile
+            user_profile = request.user.userprofile
         except UserProfile.DoesNotExist:
             return Response({"detail": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
 
