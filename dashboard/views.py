@@ -660,7 +660,7 @@ class WalletExtraMinutesView(APIView):
 
     def get(self, request):
         try:
-            wallet = Wallet.objects.get(user=request.user.userprofile)
+            wallet = Wallet.objects.get(user=request.user.profile)
             serializer = WalletExtraMinutesSerializer(wallet)
             return Response(serializer.data)
         except Wallet.DoesNotExist:
