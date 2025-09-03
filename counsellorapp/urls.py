@@ -1,6 +1,6 @@
 from django.urls import path
 
-from .views import UpcomingSessionsView, RecentActivityView, CounsellorProfileView, CounsellorPaymentSettingsView,CounsellorPaymentDetailView,CounsellorStatusView
+from .views import UpcomingSessionsView, RecentActivityView, CounsellorProfileView, CounsellorPaymentSettingsView,CounsellorPaymentDetailView,CounsellorStatusView,ActiveBookingView
 
 from rest_framework_simplejwt.views import TokenRefreshView
 
@@ -11,4 +11,5 @@ urlpatterns = [
     path('payment-settings/<int:user_id>/', CounsellorPaymentDetailView.as_view(), name='counsellor-payment-settings'),
     path('payment-settings/', CounsellorPaymentSettingsView.as_view(), name='payment-settings'),
     path('status/', CounsellorStatusView.as_view(), name='counsellor-status'),
+    path('active-booking/', ActiveBookingView.as_view(), name='counsellor-active-booking'),
 ]

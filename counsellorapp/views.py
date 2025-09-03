@@ -50,7 +50,7 @@ class UpcomingSessionsView(APIView):
 
     def get(self, request):
         try:
-            counsellor = request.user.userprofile.counsellor
+            counsellor = request.user.profile.counsellor
         except AttributeError:
             return Response({"detail": "Counsellor profile not found for the current user."}, status=404)
 
@@ -72,7 +72,7 @@ class RecentActivityView(APIView):
 
     def get(self, request):
         try:
-            counsellor = request.user.userprofile.counsellor
+            counsellor = request.user.profile.counsellor
         except AttributeError:
             return Response({"detail": "Counsellor profile not found for the current user."}, status=404)
 
@@ -112,7 +112,8 @@ class CounsellorProfileView(APIView):
 
     def get(self, request):
         try:
-            user_profile = request.user.userprofile
+           
+            user_profile = request.user.profile
         except UserProfile.DoesNotExist:
             return Response({"detail": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -124,7 +125,7 @@ class CounsellorProfileView(APIView):
 
     def put(self, request):
         try:
-            user_profile = request.user.userprofile
+            user_profile = request.user.profile
         except UserProfile.DoesNotExist:
             return Response({"detail": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -188,4 +189,52 @@ class CounsellorPaymentDetailView(APIView):
             return Response(serializer.data, status=status.HTTP_200_OK)
         except CounsellorPayment.DoesNotExist:
             return Response({'error': 'Payment settings not found'}, status=status.HTTP_404_NOT_FOUND)
+                      
+                      
+                      
+class ActiveBookingView(APIView):
+    """Get active booking for counsellor"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        try:
+            # Get counsellor profile
+            user_profile = getattr(request.user, 'profile', None)
+            if not user_profile or user_profile.user_role != 'counsellor':
+                return Response(
+                    {'error': 'User is not a counsellor'},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+
+            # Get active call request
+            active_call = CallRequest.objects.filter(
+                counsellor=user_profile,
+                status__in=['PENDING', 'ACCEPTED']
+            ).select_related('booking', 'user').first()
+
+            if not active_call:
+                return Response(
+                    {'message': 'No active bookings found'},
+                    status=status.HTTP_204_NO_CONTENT
+                )
+
+            return Response({
+                'booking_id': active_call.booking.id,
+                'call_request_id': active_call.id,
+                'user_name': active_call.user.get_full_name() or active_call.user.username,
+                'user_phone': getattr(active_call.user, 'phone_number', ''),
+                'status': active_call.status,
+                'requested_at': active_call.requested_at.isoformat(),
+                'session_duration': active_call.booking.session_duration,
+                'amount': str(active_call.booking.amount)
+            })
+
+        except Exception as e:
+            logger.error(f"Error getting active booking: {str(e)}")
+            return Response(
+                {'error': 'Failed to get active booking'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
                       
