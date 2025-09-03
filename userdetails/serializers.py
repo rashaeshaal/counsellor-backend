@@ -97,9 +97,9 @@ class UserProfileSerializer(serializers.ModelSerializer):
         fields = [
             'id','user_role', 'phone_number', 'name', 'email', 'dob', 'age', 'gender',
             'qualification', 'experience', 'google_pay_number', 'account_number',
-            'ifsc_code', 'is_approved', 'is_active', 'profile_photo', 'firebase_uid','user_id'
+            'ifsc_code', 'is_approved', 'is_active', 'profile_photo', 'firebase_uid','user'
         ]
-        read_only_fields = ['user',  'firebase_uid', 'user_id'] # user_id is read-only as it's derived from user
+        read_only_fields = ['user',  'firebase_uid'] # user_id is read-only as it's derived from user
 
 
 class PhoneNumberSerializer(serializers.Serializer):
