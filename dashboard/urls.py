@@ -22,4 +22,9 @@ urlpatterns = [
     path('initiate-call-notification/', views.InitiateCallNotificationView.as_view(), name='initiate-call-notification'),
     path('end-call-session/', views.EndCallSessionView.as_view(), name='end-call-session'),
     path('active-booking/', views.ActiveBookingView.as_view(), name='counsellor-active-booking'),
+    path('zego-health/', views.ZegoHealthCheckView.as_view(), name='zego-health'),
+    path('call/status/<int:booking_id>/', views.CallStatusView.as_view(), name='call_status'),
+    path('update-fcm-token/', views.UpdateFCMTokenView.as_view(), name='update-fcm-token'),
+    path('save-fcm-token/', views.SaveFcmTokenView.as_view(), name='save-fcm-token'),
+    path('renew-token/', views.RenewTokenView.as_view(), name='renew-token'),
 ]

@@ -9,7 +9,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from django.conf import settings
 import firebase_admin
-from firebase_admin import credentials, auth
+from firebase_admin import credentials, auth, messaging
 import logging
 from django.views.decorators.csrf import csrf_exempt
 import razorpay
@@ -33,10 +33,34 @@ from adminapp.serializers import UserProblemSerializer, ProblemSerializer
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 import json
-from .zego_token_generator import generate_token
 import time
 import jwt
 from datetime import datetime, timedelta
+import time
+import hmac
+import hashlib
+import base64
+import json
+import logging
+from datetime import timedelta
+from django.conf import settings
+from django.utils import timezone
+from django.db import transaction
+from django.contrib.auth import get_user_model
+from django.shortcuts import get_object_or_404
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
+
+from .models import Booking, CallRequest
+from utils.zego_token import generate_token04, ERROR_CODE_SUCCESS
+from .serializers import CallRequestSerializer
+
+logger = logging.getLogger(__name__)
+User = get_user_model()
 # Create your views here.
 class CounsellorListView(APIView):
     permission_classes = [AllowAny]
@@ -226,135 +250,212 @@ class VerifyPaymentView(APIView):
 
 
 # dashboard/views.py
-class InitiateCallView(APIView):
-    permission_classes = [IsAuthenticated]
 
-    @transaction.atomic
+import os
+
+
+
+# In your Django views.py file
+
+
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
+from django.conf import settings
+import logging
+  
+logger = logging.getLogger(__name__)
+
+# Corrected Backend Token Generation - This replicates the exact working test token
+# Final Backend Token Generation - Exact replication of working test token
+import json
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
+from django.conf import settings
+from .models import Booking  # Adjust based on your app
+from utils.zego_token import generate_token04, ERROR_CODE_SUCCESS
+# your_app/views.py
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from django.conf import settings
+import json
+import time
+from .models import Booking
+from firebase_admin import messaging
+
+class InitiateCallView(APIView):
     def post(self, request):
         booking_id = request.data.get('booking_id')
         if not booking_id:
-            logger.error("No booking_id provided in initiate call request")
-            return Response({'error': 'Booking ID is required'}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'booking_id is required'}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            booking = Booking.objects.get(id=booking_id, user=request.user)
+            booking = Booking.objects.get(id=booking_id)
+            counsellor = booking.counsellor
+            counsellor_id = counsellor.id
+            counsellor_user_id = str(counsellor.user.id)
         except Booking.DoesNotExist:
-            logger.error(f"Booking {booking_id} not found for user {request.user.id}")
             return Response({'error': 'Booking not found'}, status=status.HTTP_404_NOT_FOUND)
 
+        room_id = f"booking_{booking_id}"
+        user_id = str(request.user.id)
+        app_id = getattr(settings, 'ZEGO_APP_ID', None)
+        server_secret = getattr(settings, 'ZEGO_SERVER_SECRET', None)
+
+        if not app_id or not server_secret:
+            return Response({'error': 'Video call service not configured'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # Generate token for user
+        user_payload_data = {
+            'room_id': room_id,
+            'privilege': {'1': 1, '2': 1},  # 1: Login, 2: Publish
+            'stream_id_list': []
+        }
+        user_payload = json.dumps(user_payload_data)
+        user_token_info = generate_token04(
+            app_id=app_id,
+            user_id=user_id,
+            secret=server_secret,
+            effective_time_in_seconds=3600,
+            payload=user_payload
+        )
+
+        if user_token_info.error_code != ERROR_CODE_SUCCESS:
+            return Response({'error': f"User token generation failed: {user_token_info.error_message}"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Generate token for counsellor
+        counsellor_payload_data = {
+            'room_id': room_id,
+            'privilege': {'1': 1, '2': 1},
+            'stream_id_list': []
+        }
+        counsellor_payload = json.dumps(counsellor_payload_data)
+        counsellor_token_info = generate_token04(
+            app_id=app_id,
+            user_id=counsellor_user_id,
+            secret=server_secret,
+            effective_time_in_seconds=3600,
+            payload=counsellor_payload
+        )
+
+        if counsellor_token_info.error_code != ERROR_CODE_SUCCESS:
+            return Response({'error': f"Counsellor token generation failed: {counsellor_token_info.error_message}"}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Send FCM notification to counsellor
+        if counsellor.fcm_token:
+            try:
+                message = messaging.Message(
+                    data={
+                        'type': 'call_notification',
+                        'room_id': room_id,
+                        'kitToken': counsellor_token_info.token,
+                        'user_id': counsellor_user_id,
+                        'streamId': f"stream_{counsellor_user_id}_{int(time.time())}",
+                        'booking_id': str(booking_id),
+                        'counsellor_id': str(counsellor_id),
+                        'clientUserId': user_id,
+                    },
+                    token=counsellor.fcm_token,
+                )
+                response = messaging.send(message)
+                print(f"[FCM] Notification sent to counsellor_{counsellor_user_id}: {response}")
+            except Exception as e:
+                print(f"[FCM] Failed to send notification: {str(e)}")
+                return Response({'error': f"Failed to send notification: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response({
+            'room_id': room_id,
+            'kitToken': user_token_info.token,
+            'app_id': app_id,
+            'user_id': user_id,
+            'streamId': f"stream_{user_id}_{int(time.time())}",
+            'expires_in': 3600,
+            'counsellor_id': counsellor_id
+        }, status=status.HTTP_200_OK)
+
+class SaveFcmTokenView(APIView):
+    def post(self, request):
+        fcm_token = request.data.get('fcm_token')
+        if not fcm_token:
+            return Response({'error': 'fcm_token is required'}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
-            logger.debug(f"Attempting to create CallRequest for booking {booking_id}, user {request.user.id}")
+            counsellor = UserProfile.objects.get(user=request.user)
+            counsellor.fcm_token = fcm_token
+            counsellor.save()
+            return Response({'message': 'FCM token saved'}, status=status.HTTP_200_OK)
+        except UserProfile.DoesNotExist:
+            return Response({'error': 'Counsellor not found'}, status=status.HTTP_404_NOT_FOUND)
+
+class RenewTokenView(APIView):
+    def post(self, request):
+        room_id = request.data.get('roomId')
+        user_id = request.data.get('userId')
+        app_id = getattr(settings, 'ZEGO_APP_ID', None)
+        server_secret = getattr(settings, 'ZEGO_SERVER_SECRET', None)
+
+        if not room_id or not user_id or not app_id or not server_secret:
+            return Response({'error': 'Missing required parameters'}, status=status.HTTP_400_BAD_REQUEST)
+
+        payload_data = {
+            'room_id': room_id,
+            'privilege': {'1': 1, '2': 1},
+            'stream_id_list': []
+        }
+        payload = json.dumps(payload_data)
+        token_info = generate_token04(
+            app_id=app_id,
+            user_id=user_id,
+            secret=server_secret,
+            effective_time_in_seconds=3600,
+            payload=payload
+        )
+
+        if token_info.error_code != ERROR_CODE_SUCCESS:
+            return Response({'error': f"Token generation failed: {token_info.error_message}"}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({'kitToken': token_info.token}, status=status.HTTP_200_OK)
+        
+class CallStatusView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request, booking_id):
+        try:
+            booking = Booking.objects.get(id=booking_id)
             
-            # Get current timestamp
-            now = timezone.now()
+            # Validate permissions
+            if booking.user != request.user and booking.counsellor.user != request.user:
+                return Response({"error": "Unauthorized"}, status=status.HTTP_403_FORBIDDEN)
             
-            # Check if CallRequest already exists for this booking
-            existing_call = CallRequest.objects.filter(booking=booking).first()
-            if existing_call:
-                logger.info(f"CallRequest already exists for booking {booking_id}")
-                serializer = CallRequestSerializer(existing_call)
-                return Response({
-                    'status': 'Call already initiated',
-                    'call_request': serializer.data
-                }, status=status.HTTP_200_OK)
+            # Determine user role
+            user_role = 'counsellor' if booking.counsellor.user == request.user else 'user'
             
-            # Create CallRequest with explicit field values
-            call_request_data = {
-                'booking': booking,
-                'user': request.user,
-                'counsellor': booking.counsellor,
-                'status': 'PENDING',
-                'scheduled_at': booking.scheduled_at or now,
-                'requested_at': now,  # Explicitly set this
-                'created_at': now,    # Explicitly set this too
-                'updated_at': now,    # Fix for updated_at field
+            response_data = {
+                "booking_id": booking.id,
+                "room_id": f"booking_{booking.id}",
+                "user_role": user_role,
+                "counsellor_id": booking.counsellor.id,
+                "user_id": booking.user.id,
+                "booking_details": {
+                    "user_name": booking.user.get_full_name() if hasattr(booking.user, 'get_full_name') else str(booking.user),
+                    "counsellor_name": booking.counsellor.user.get_full_name() if hasattr(booking.counsellor.user, 'get_full_name') else str(booking.counsellor.user),
+                    "scheduled_time": booking.scheduled_time.isoformat() if hasattr(booking, 'scheduled_time') else None
+                }
             }
             
-            call_request = CallRequest(**call_request_data)
+            return Response(response_data)
             
-            # Save with error handling
-            try:
-                call_request.save()
-                logger.info(f"CallRequest saved successfully: ID {call_request.id}")
-            except Exception as save_error:
-                logger.error(f"Error saving CallRequest: {save_error}")
-                # Try alternative approach using objects.create with explicit values
-                try:
-                    call_request = CallRequest.objects.create(
-                        booking=booking,
-                        user=request.user,
-                        counsellor=booking.counsellor,
-                        status='PENDING',
-                        scheduled_at=booking.scheduled_at or now,
-                        requested_at=now,
-                        created_at=now,
-                        updated_at=now
-                    )
-                    logger.info(f"CallRequest created via objects.create: ID {call_request.id}")
-                except Exception as create_error:
-                    logger.error(f"Error with objects.create: {create_error}")
-                    # Last resort: use raw SQL
-                    from django.db import connection
-                    with connection.cursor() as cursor:
-                        cursor.execute("""
-                            INSERT INTO dashboard_callrequest 
-                            (booking_id, user_id, counsellor_id, status, scheduled_at, requested_at, created_at, updated_at)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                            RETURNING id
-                        """, [
-                            booking.id, 
-                            request.user.id, 
-                            booking.counsellor.id, 
-                            'PENDING', 
-                            booking.scheduled_at or now, 
-                            now, 
-                            now, 
-                            now
-                        ])
-                        call_request_id = cursor.fetchone()[0]
-                        call_request = CallRequest.objects.get(id=call_request_id)
-                        logger.info(f"CallRequest created via raw SQL: ID {call_request.id}")
-
-            logger.debug(f"CallRequest created: ID {call_request.id}, requested_at {call_request.requested_at}")
-
-            # Send WebSocket notification
-            try:
-                channel_layer = get_channel_layer()
-                async_to_sync(channel_layer.group_send)(
-                    f'call_{booking_id}',
-                    {
-                        'type': 'call_notification',
-                        'message': {
-                            'type': 'call_initiated',
-                            'booking_id': str(booking_id),
-                            'user_id': request.user.id,
-                            'user_name': request.user.get_full_name() or request.user.username,
-                            'timestamp': int(now.timestamp())
-                        }
-                    }
-                )
-            except Exception as ws_error:
-                logger.warning(f"WebSocket notification failed: {ws_error}")
-                # Don't fail the request if WebSocket fails
-
-            logger.info(f"Call initiated for booking {booking_id} by user {request.user.id}")
-            serializer = CallRequestSerializer(call_request)
-            return Response({
-                'status': 'Call initiated',
-                'call_request': serializer.data
-            }, status=status.HTTP_200_OK)
-
+        except Booking.DoesNotExist:
+            return Response({"error": "Booking not found"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
-            logger.error(f"Error initiating call for booking {booking_id}: {str(e)}")
-            logger.error(f"Exception type: {type(e).__name__}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return Response({
-                'error': 'Failed to initiate call',
-                'detail': str(e)
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-
+            logger.error(f"Unexpected error in CallStatusView: {str(e)}", exc_info=True)
+            return Response({"error": "Internal server error"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class CheckCounsellorAvailabilityView(APIView):
@@ -660,7 +761,7 @@ class WalletExtraMinutesView(APIView):
 
     def get(self, request):
         try:
-            wallet = Wallet.objects.get(user=request.user.profile)
+            wallet = Wallet.objects.get(user=request.user.userprofile)
             serializer = WalletExtraMinutesSerializer(wallet)
             return Response(serializer.data)
         except Wallet.DoesNotExist:
@@ -669,71 +770,6 @@ class WalletExtraMinutesView(APIView):
             logger.error(f"Error fetching extra minutes for user {request.user.id}: {str(e)}")
             return Response(
                 {'error': 'Failed to fetch extra minutes'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-class GenerateZegoTokenView(APIView):
-    """Generate Zego token for audio call - API View version"""
-    permission_classes = [IsAuthenticated]
-    
-    def post(self, request):
-        try:
-            user_id = request.data.get('userID')
-            room_id = request.data.get('roomID')
-
-            if not user_id or not room_id:
-                return Response(
-                    {'error': 'userID and roomID are required'}, 
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-
-            # Validate that the user has permission for this room/booking
-            try:
-                booking_id = int(room_id)
-                booking = Booking.objects.get(id=booking_id)
-                
-                # Check if user is part of this booking
-                user_profile = getattr(request.user, 'profile', None)
-                if (request.user != booking.user and 
-                    user_profile != booking.counsellor):
-                    return Response(
-                        {'error': 'Permission denied for this booking'}, 
-                        status=status.HTTP_403_FORBIDDEN
-                    )
-                
-            except (ValueError, Booking.DoesNotExist):
-                return Response(
-                    {'error': 'Invalid booking ID'}, 
-                    status=status.HTTP_404_NOT_FOUND
-                )
-
-            # Get credentials from settings
-            app_id = settings.ZEGO_APP_ID
-            server_secret = settings.ZEGO_SERVER_SECRET
-
-            # Generate token with extended validity
-            token = generate_token(
-                app_id, 
-                server_secret, 
-                user_id, 
-                room_id, 
-                privilege_expire_in_seconds=3600
-            )
-
-            # Log token generation for debugging
-            logger.info(f"Generated Zego token for user {user_id} in room {room_id}")
-
-            return Response({
-                'kitToken': token,
-                'roomID': room_id,
-                'userID': user_id,
-                'tokenExpiresAt': (timezone.now() + timedelta(hours=1)).isoformat()
-            })
-
-        except Exception as e:
-            logger.error(f"Error generating Zego token: {str(e)}")
-            return Response(
-                {'error': 'Failed to generate token'}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -1076,3 +1112,250 @@ class ActiveBookingView(APIView):
                 {'error': 'Failed to get active booking'}, 
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+class GenerateZegoTokenView(APIView):
+    """Generate Zego token for audio call with enhanced validation and error handling"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        try:
+            user_id = request.data.get('userID')
+            room_id = request.data.get('roomID')
+            logger.debug(f"Token request payload: {request.data}")
+
+            if not user_id or not room_id:
+                logger.error("Missing userID or roomID")
+                return Response({'error': 'Both userID and roomID are required'}, status=status.HTTP_400_BAD_REQUEST)
+
+            user_id = str(user_id).strip()
+            room_id = str(room_id).strip()
+
+            if not user_id or not room_id:
+                logger.error("Empty userID or roomID after stripping")
+                return Response({'error': 'userID and roomID cannot be empty'}, status=status.HTTP_400_BAD_REQUEST)
+
+            logger.info(f"Token request from user {request.user.id} for userID={user_id}, roomID={room_id}")
+
+            try:
+                booking_id = int(room_id)
+                booking = Booking.objects.get(id=booking_id)
+                logger.debug(f"Booking found: {booking.id}, status: {booking.status}")
+                
+                user_profile = getattr(request.user, 'profile', None)
+                is_user = request.user == booking.user
+                is_counsellor = user_profile and user_profile == booking.counsellor
+                
+                if not (is_user or is_counsellor):
+                    logger.error(f"Permission denied: user {request.user.id} not authorized for booking {booking_id}")
+                    return Response({'error': 'You do not have permission to join this session'}, status=status.HTTP_403_FORBIDDEN)
+                
+                if booking.status not in ['confirmed', 'in_progress', 'wallet_credited']:
+                    logger.error(f"Invalid booking status: {booking.status}")
+                    return Response({'error': f'Booking is not available for calls (status: {booking.status})'}, status=status.HTTP_400_BAD_REQUEST)
+                
+            except (ValueError, TypeError):
+                logger.error(f"Invalid room_id format: {room_id}")
+                return Response({'error': 'Invalid room ID format'}, status=status.HTTP_400_BAD_REQUEST)
+            except Booking.DoesNotExist:
+                logger.error(f"Booking not found: {booking_id}")
+                return Response({'error': 'Invalid booking or booking not found'}, status=status.HTTP_404_NOT_FOUND)
+
+            # If all checks pass, generate the token
+            app_id = getattr(settings, 'ZEGO_APP_ID', None)
+            server_secret = getattr(settings, 'ZEGO_SERVER_SECRET', None)
+
+            if not app_id or not server_secret:
+                logger.error("Zego App ID or Server Secret not configured")
+                return Response({'error': 'Zego service is not configured'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+            try:
+                payload = {
+                    "room_id": room_id,
+                    "privilege": {
+                        "1": 1,  # Login privilege
+                        "2": 1   # Publish privilege
+                    },
+                    "stream_id_list": []
+                }
+                payload_dict = {
+                    "room_id": room_id,
+                    "privilege": {
+                        "1": 1,  # Login privilege
+                        "2": 1   # Publish privilege
+                    },
+                    "stream_id_list": []
+                }
+                payload = json.dumps(payload_dict)
+                token_info = generate_token04(
+                    app_id=int(app_id),
+                    user_id=str(user_id),
+                    secret=server_secret,
+                    effective_time_in_seconds=3600,
+                    payload=payload
+                )
+
+                if token_info.error_code != ERROR_CODE_SUCCESS:
+                    logger.error(f"Token generation failed: {token_info.error_message}")
+                    return Response(
+                        {"error": f"Token generation failed: {token_info.error_message}"},
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+
+                expires_at = timezone.now() + timedelta(hours=1)
+                logger.info(f"Zego token generated for user {user_id} in room {room_id}")
+                return Response({
+                    'kitToken': token_info.token,
+                    'roomID': room_id,
+                    'userID': user_id,
+                    'tokenExpiresAt': expires_at.isoformat()
+                }, status=status.HTTP_200_OK)
+            except Exception as e:
+                logger.error(f"Error during Zego token generation: {str(e)}")
+                return Response({'error': 'Failed to generate Zego token'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        except Exception as e:
+            logger.error(f"Error generating Zego token: {str(e)}")
+            return Response(
+                {'error': 'Failed to generate Zego token'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class RefreshZegoTokenView(APIView):
+    """Refresh an existing Zego token before it expires"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        try:
+            user_id = request.data.get('userID')
+            room_id = request.data.get('roomID')
+
+            if not user_id or not room_id:
+                return Response(
+                    {'error': 'userID and roomID are required'}, 
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Validate permission (similar to GenerateZegoTokenView)
+            try:
+                booking_id = int(room_id)
+                from .models import Booking
+                
+                booking = Booking.objects.get(id=booking_id)
+                
+                user_profile = getattr(request.user, 'profile', None)
+                if not (request.user == booking.user or 
+                       (user_profile and user_profile == booking.counsellor)):
+                    return Response(
+                        {'error': 'Permission denied'}, 
+                        status=status.HTTP_403_FORBIDDEN
+                    )
+                    
+            except Exception:
+                return Response(
+                    {'error': 'Invalid booking'}, 
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Get Zego configuration
+            app_id = getattr(settings, 'ZEGO_APP_ID', None)
+            server_secret = getattr(settings, 'ZEGO_SERVER_SECRET', None)
+
+            if not app_id or not server_secret:
+                return Response(
+                    {'error': 'Zego service unavailable'}, 
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+
+            # Generate fresh token with 1 hour validity
+            payload_dict = {
+                "room_id": room_id,
+                "privilege": {
+                    "1": 1,  # Login privilege
+                    "2": 1   # Publish privilege
+                },
+                "stream_id_list": []
+            }
+            payload = json.dumps(payload_dict)
+            token_info = generate_token04(
+                app_id=int(app_id),
+                user_id=str(user_id),
+                secret=server_secret,
+                effective_time_in_seconds=3600,
+                payload=payload
+            )
+
+            if token_info.error_code != ERROR_CODE_SUCCESS:
+                logger.error(f"Token refresh failed: {token_info.error_message}")
+                return Response(
+                    {"error": f"Token refresh failed: {token_info.error_message}"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            expires_at = timezone.now() + timedelta(hours=1)
+
+            logger.info(f"Token refreshed for user {user_id} in room {room_id}")
+
+            return Response({
+                'kitToken': token_info.token,
+                'roomID': room_id,
+                'userID': user_id,
+                'tokenExpiresAt': expires_at.isoformat(),
+                'refreshed': True
+            }, status=status.HTTP_200_OK)
+
+        except Exception as e:
+            logger.error(f"Token refresh error: {str(e)}")
+            return Response(
+                {'error': 'Failed to refresh token'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class ZegoHealthCheckView(APIView):
+    """Health check endpoint for Zego service"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        try:
+            # Check Zego configuration
+            app_id = getattr(settings, 'ZEGO_APP_ID', None)
+            server_secret = getattr(settings, 'ZEGO_SERVER_SECRET', None)
+            
+            config_valid = bool(app_id and server_secret)
+            
+            if config_valid:
+                try:
+                    int(app_id)  # Validate app_id is numeric
+                except (ValueError, TypeError):
+                    config_valid = False
+            
+            return Response({
+                'status': 'healthy' if config_valid else 'configuration_error',
+                'zego_configured': config_valid,
+                'timestamp': timezone.now().isoformat()
+            })
+            
+        except Exception as e:
+            logger.error(f"Health check error: {str(e)}")
+            return Response({
+                'status': 'error',
+                'error': 'Health check failed'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)            
+            
+            
+class UpdateFCMTokenView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request):
+        fcm_token = request.data.get('fcm_token')
+        if not fcm_token:
+            return Response({'error': 'fcm_token is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            profile = UserProfile.objects.get(user=request.user)
+            profile.fcm_token = fcm_token
+            profile.save(update_fields=['fcm_token'])
+            return Response({'status': 'FCM token updated successfully'}, status=status.HTTP_200_OK)
+        except UserProfile.DoesNotExist:
+            return Response({'error': 'UserProfile not found'}, status=status.HTTP_404_NOT_FOUND)

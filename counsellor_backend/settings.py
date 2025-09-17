@@ -105,11 +105,15 @@ DATABASES = {
 }
 
 # Firebase initialization
-FIREBASE_CREDENTIALS = config('FIREBASE_CREDENTIALS')
+FIREBASE_SERVICE_ACCOUNT_KEY = os.path.join(BASE_DIR, '..', 'firebase-adminsdk.json')
 if not firebase_admin._apps:
-    cred_dict = json.loads(FIREBASE_CREDENTIALS)
-    cred = credentials.Certificate(cred_dict)
-    firebase_admin.initialize_app(cred)
+    try:
+        cred = credentials.Certificate(FIREBASE_SERVICE_ACCOUNT_KEY)
+        firebase_admin.initialize_app(cred)
+    except FileNotFoundError:
+        print(f"Firebase credentials file not found at {FIREBASE_SERVICE_ACCOUNT_KEY}")
+        # Handle the error appropriately, maybe exit or use a dummy client
+        pass
     
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -183,8 +187,7 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Firebase Configuration
-FIREBASE_SERVICE_ACCOUNT_KEY = os.path.join(BASE_DIR, 'firebase-service-account-key.json')
+
 RAZORPAY_KEY_ID = config('RAZORPAY_KEY_ID')
 RAZORPAY_KEY_SECRET = config('RAZORPAY_KEY_SECRET')
 RAZORPAY_ACCOUNT_NUMBER = config('RAZORPAY_ACCOUNT_NUMBER')
@@ -203,13 +206,16 @@ SIMPLE_JWT = {
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
     'ROTATE_REFRESH_TOKENS': False,
     'BLACKLIST_AFTER_ROTATION': False,
-    'SIGNING_KEY': 'your-secret-key',  # Ensure this matches when tokens are generated
+    'SIGNING_KEY': SECRET_KEY,  # Use Django's SECRET_KEY for consistency
 }
 ASGI_APPLICATION = 'counsellor_backend.asgi.application'
 
 CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels.layers.InMemoryChannelLayer',
+    "default": {
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [("127.0.0.1", 6379)],
+        },
     },
 }
 LOGGING = {
@@ -241,5 +247,5 @@ MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
 # Zego Cloud Settings
-ZEGO_APP_ID = config('ZEGO_APP_ID', cast=int)  # Replace with your actual App ID
-ZEGO_SERVER_SECRET = config("ZEGO_SERVER_SECRET")
+ZEGO_APP_ID = 977928625
+ZEGO_SERVER_SECRET = '61bd5af5c6e4f5788cbc2609fac2efdf'

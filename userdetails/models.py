@@ -112,6 +112,7 @@ class UserProfile(models.Model):
     firebase_uid = models.CharField(max_length=255, blank=True, null=True, unique=True)
     razorpay_contact_id = models.CharField(max_length=100, blank=True, null=True)
     razorpay_fund_account_id = models.CharField(max_length=100, blank=True, null=True)
+    fcm_token = models.CharField(max_length=255, blank=True, null=True)
    
     def clean(self):
         # Ensure phone_number matches user.phone_number
